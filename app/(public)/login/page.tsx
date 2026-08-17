@@ -11,6 +11,13 @@ export default function LoginPage() {
   const router = useRouter();
 
   const handleLogin = async () => {
+    // // dev bypass
+    // document.cookie = `userRole=admin; path=/; SameSite=Strict`;
+    // document.cookie = `username=${username || "dev"}; path=/; SameSite=Strict`;
+
+    // router.push("/admin/home"); // or "/annotator/home"
+    // return
+    
     if (!username) {
       setError("Please enter a username.");
       return;
@@ -36,9 +43,11 @@ export default function LoginPage() {
       }
 
       const user = await res.json();
-
+      console.log("user", user)
       document.cookie = `userRole=${user.role}; path=/; SameSite=Strict`;
       document.cookie = `username=${user.username}; path=/; SameSite=Strict`;
+      document.cookie = `userAccessGroup=${user.accessGroup}; path=/; SameSite=Strict`;
+      console.log("accessGroup: ", user.accessGroup)
 
       if (user.role === "admin") {
         router.push("/admin/home");

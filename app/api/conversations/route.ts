@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { getCollection } from "@/lib/cosmosdb";
+import { cookies } from "next/headers";
 
 export async function GET() {
   try {
     const collection = await getCollection();
     const documents = await collection.find({}).toArray();
+    console.log("documents", documents)
+    const userAccessGroup = (await cookies()).get("userAccessGroup")?.value;
+    // console.log("accessGroup", accessGroup)
+    const filteredDocuments = documents.filter((doc) => doc.accessGroups?.includes(userAccessGroup))   
+    // console.log("filteredDocuments", filteredDocuments)
 
-    const conversations = documents.map((doc) => ({
+    const conversations = filteredDocuments.map((doc) => ({
       _id: doc._id.toString(),
       Person: doc.person || "Unknown",
       firstInteraction: doc.stime?.text || "No start time",

@@ -10,7 +10,9 @@ export async function POST(req: Request) {
             return new Response('Username is required', { status: 400 });
         }
         const userCollection = await getUserCollection()
+        // console.log("userCollection: ", userCollection)
         const user = await userCollection.findOne({username});
+        // console.log("user: ", user)
 
         if(!user){
             return new Response('User not found', { status: 404 });

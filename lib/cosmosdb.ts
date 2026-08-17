@@ -12,9 +12,9 @@ const databaseId = process.env.COSMOSDB_DATABASE || "";
 const containerId = process.env.COSMOSDB_CONTAINER || "";
 const userCollection = process.env.COSMOSDB_USER_COLLECTION || "";
 
-if (!uri || !databaseId || !containerId || !userCollection) {
-  throw new Error("Missing required environment variables");
-}
+// if (!uri || !databaseId || !containerId || !userCollection) {
+//   throw new Error("Missing required environment variables");
+// }
 
 // Use a single client instance
 let client: MongoClient | null = null;

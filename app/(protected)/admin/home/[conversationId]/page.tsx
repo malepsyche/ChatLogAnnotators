@@ -49,7 +49,7 @@ export default function ConversationPage({
 
   const handleSaveAnswer = () => {
     if (!editingAnnotation?._id || !conversationId) return;
-    fetch("/api/conversations/${conversationId}", {
+    fetch(`/api/conversations/${conversationId}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",

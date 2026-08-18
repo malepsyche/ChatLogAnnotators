@@ -10,15 +10,16 @@ export async function POST(req: Request) {
             return new Response('Username is required', { status: 400 });
         }
         const userCollection = await getUserCollection()
-        // console.log("userCollection: ", userCollection)
+        console.log("userCollection: ", userCollection)
         const user = await userCollection.findOne({username});
-        // console.log("user: ", user)
+        console.log("user: ", user)
 
         if(!user){
             return new Response('User not found', { status: 404 });
         }
         return new Response(JSON.stringify(user), { status: 200 });
     } catch (error) {
+        console.error("Login route error:", error);
         return new Response('Internal Server Error', { status: 500 });
     }
 }

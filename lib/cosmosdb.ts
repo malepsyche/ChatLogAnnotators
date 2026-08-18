@@ -21,10 +21,17 @@ let client: MongoClient | null = null;
 
 const getClient = async () => {
   if (!client) {
-    client = new MongoClient(uri);
-    await client.connect();
+    const newClient = new MongoClient(uri);
+    try {
+      await newClient.connect();
+      client = newClient;
+    }
+    catch (error) {
+      console.log("error: ", error);
+      throw error
+    }
   }
-  return client;
+  return client
 };
 
 export const getCollection = async () => {

@@ -2,10 +2,10 @@ import React from "react";
 import { motion } from "framer-motion";
 
 interface CueCardProps {
+  title: string;
   person: string;
   firstInteraction: string;
   lastInteraction: string;
-  title: string;
   onClick: () => void;
 }
 

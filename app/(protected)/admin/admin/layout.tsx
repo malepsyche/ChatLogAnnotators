@@ -6,7 +6,8 @@ import ConversationSidebar from "@/components/conversation-sidebar";
 
 interface Chatlog {
   _id: string;
-  Person: string;
+  person: string;
+  title: string;
   firstInteraction: string;
   lastInteraction: string;
   messages: { role: string; content: string }[];

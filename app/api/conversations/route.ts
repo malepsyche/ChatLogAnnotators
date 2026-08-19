@@ -14,8 +14,9 @@ export async function GET() {
 
     const conversations = filteredDocuments.map((doc) => ({
       _id: doc._id.toString(),
-      Person: doc.person || "Unknown",
-      firstInteraction: doc.stime?.text || "No start time",
+      person: doc.person || "Unknown",
+      title: doc.title || "NIL",
+      firstInteraction: doc.first_interact?.text || "No start time",
       lastInteraction: doc.last_interact?.text || "No last interaction",
       messages: doc.messages || [],
     }));

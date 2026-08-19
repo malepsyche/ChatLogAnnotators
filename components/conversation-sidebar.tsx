@@ -3,7 +3,8 @@ import CueCard from "./cue-card";
 
 interface Conversation {
   _id: string;
-  Person: string;
+  title: string;
+  person: string;
   firstInteraction: string;
   lastInteraction: string;
 }
@@ -22,10 +23,10 @@ const ConversationSidebar: React.FC<ConvSidebarProps> = ({ conversations, onConv
       {conversations.map((conv) => (
         <CueCard
           key={conv._id}
-          person={conv.Person}
-          title = "Title"
-          lastInteraction={conv.lastInteraction}
+          person={conv.person}
+          title={conv.title}
           firstInteraction={conv.firstInteraction}
+          lastInteraction={conv.lastInteraction}
           onClick={() => onConversationSelect(conv._id)}
         />
       ))}

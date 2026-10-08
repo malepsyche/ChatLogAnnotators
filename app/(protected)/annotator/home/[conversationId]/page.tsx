@@ -371,6 +371,8 @@ export default function ConversationPage({
                               }
                             : null
                         );
+
+                        handleSaveAnswer(annotation._id, [e.target.value]);
                       }}
                       onBlur={(e) =>
                         handleSaveAnswer(annotation._id, [e.target.value])
@@ -452,6 +454,9 @@ export default function ConversationPage({
                                     }
                                   : null
                               );
+
+                              handleSaveAnswer(annotation._id, [option]);
+
                             }}
                             onBlur={() =>
                               handleSaveAnswer(annotation._id, [option])
@@ -551,6 +556,28 @@ export default function ConversationPage({
                                       ),
                                     }
                                   : null
+                              );
+
+                              const updatedContent =
+                                annotation.answers
+                                  ?.find(
+                                    (ans) =>
+                                      ans.name ===
+                                      (document.cookie
+                                        .split("; ")
+                                        .find((row) =>
+                                          row.startsWith("username=")
+                                        )
+                                        ?.split("=")[1] || "Anonymous")
+                                  )
+                                  ?.content?.filter(
+                                    (ansOpt) => ansOpt !== option
+                                  ) || [];
+                              handleSaveAnswer(
+                                annotation._id,
+                                e.target.checked
+                                  ? [...updatedContent, option]
+                                  : updatedContent
                               );
                             }}
                             onBlur={(e) => {
@@ -653,6 +680,8 @@ export default function ConversationPage({
                                 }
                               : null
                           );
+
+                          handleSaveAnswer(annotation._id, [e.target.value]);
                         }}
                         onBlur={(e) =>
                           handleSaveAnswer(annotation._id, [e.target.value])
@@ -791,6 +820,10 @@ export default function ConversationPage({
                                     : a
                                 )
                               );
+
+                              handleSaveMessageAnnotation(annotation._id, [
+                                e.target.value,
+                              ]);
                             }}
                             onBlur={(e) =>
                               handleSaveMessageAnnotation(annotation._id, [
@@ -873,6 +906,12 @@ export default function ConversationPage({
                                           : a
                                       )
                                     );
+
+                                    handleSaveMessageAnnotation(
+                                      annotation._id,
+                                      [option]
+                                    );
+
                                   }}
                                   onBlur={() =>
                                     handleSaveMessageAnnotation(
@@ -980,6 +1019,38 @@ export default function ConversationPage({
                                             }
                                           : a
                                       )
+                                    );
+
+                                    const updatedContent = e.target.checked
+                                      ? [
+                                          ...(annotation.answers?.find(
+                                            (ans) =>
+                                              ans.name ===
+                                              (document.cookie
+                                                .split("; ")
+                                                .find((row) =>
+                                                  row.startsWith("username=")
+                                                )
+                                                ?.split("=")[1] || "Anonymous")
+                                          )?.content || []),
+                                          option,
+                                        ]
+                                      : (
+                                          annotation.answers?.find(
+                                            (ans) =>
+                                              ans.name ===
+                                              (document.cookie
+                                                .split("; ")
+                                                .find((row) =>
+                                                  row.startsWith("username=")
+                                                )
+                                                ?.split("=")[1] || "Anonymous")
+                                          )?.content || []
+                                        ).filter((ansOpt) => ansOpt !== option);
+
+                                    handleSaveMessageAnnotation(
+                                      annotation._id,
+                                      updatedContent
                                     );
                                   }}
                                   onBlur={(e) => {
@@ -1089,6 +1160,10 @@ export default function ConversationPage({
                                       : a
                                   )
                                 );
+
+                                handleSaveMessageAnnotation(annotation._id, [
+                                  e.target.value,
+                                ]);
                               }}
                               onBlur={(e) =>
                                 handleSaveMessageAnnotation(annotation._id, [

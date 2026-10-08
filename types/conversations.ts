@@ -19,12 +19,28 @@ export interface Answer {
   content: string[] | null;
 }
   
+export interface AdminResolution {
+  content: string[];
+  name: string;
+  timestamp: number;
+}
+
+export type ResolutionStatus =
+  | "pending"
+  | "consensus"
+  | "disagreement"
+  | "admin-resolved";
+
 export interface Annotation {
   _id: string;
   title: string;
   type: string;
   options?: string[];
   answers: Answer[];
+
+  adminResolution?: AdminResolution;
+  resolutionStatus?: ResolutionStatus;
+  effectiveFinalAnnotation?: string[] | null;
 }
   
 export interface Conversation {

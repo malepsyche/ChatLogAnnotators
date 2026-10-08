@@ -89,8 +89,91 @@ export async function GET(req: Request, context: any /* eslint-disable-line @typ
       notAnnotatedUsers,
     };
 
+    // Calculate final annotation status for each conversation-level annotation
+    const assignedUsernames = assignedUsers.map((user) => user.username);
+
+    const annotationsWithResolution = (conversation.annotations ?? []).map(
+      (annotation: any) => {
+        // If an admin has manually resolved the annotation,
+        // the persisted admin resolution becomes the final annotation.
+        if (annotation.adminResolution) {
+          return {
+            ...annotation,
+            resolutionStatus: "admin-resolved",
+            effectiveFinalAnnotation: annotation.adminResolution.content,
+          };
+        }
+
+        // Only use answers from annotators assigned to this conversation.
+        const annotatorAnswers = (annotation.answers ?? []).filter(
+          (answer: any) =>
+            typeof answer === "object" &&
+            answer !== null &&
+            assignedUsernames.includes(answer.name)
+        );
+
+        // No assigned annotators means there cannot be a consensus yet.
+        if (assignedUsers.length === 0) {
+          return {
+            ...annotation,
+            resolutionStatus: "pending",
+            effectiveFinalAnnotation: null,
+          };
+        }
+
+        // Check whether every assigned annotator has answered.
+        const answeredUsers = new Set(
+          annotatorAnswers.map((answer: any) => answer.name)
+        );
+
+        if (answeredUsers.size < assignedUsers.length) {
+          return {
+            ...annotation,
+            resolutionStatus: "pending",
+            effectiveFinalAnnotation: null,
+          };
+        }
+
+        // Normalise the answers so multiple-answer selections
+        // are considered equal regardless of order.
+        const normaliseContent = (content: string[] | null | undefined) =>
+          [...(content ?? [])].sort();
+
+        const firstAnswer = normaliseContent(
+          annotatorAnswers[0]?.content
+        );
+
+        const everyoneAgrees = annotatorAnswers.every((answer: any) => {
+          const currentAnswer = normaliseContent(answer.content);
+
+          return (
+            currentAnswer.length === firstAnswer.length &&
+            currentAnswer.every(
+              (value: string, index: number) =>
+                value === firstAnswer[index]
+            )
+          );
+        });
+
+        if (everyoneAgrees) {
+          return {
+            ...annotation,
+            resolutionStatus: "consensus",
+            effectiveFinalAnnotation: firstAnswer,
+          };
+        }
+
+        return {
+          ...annotation,
+          resolutionStatus: "disagreement",
+          effectiveFinalAnnotation: null,
+        };
+      }
+    );
+
     return NextResponse.json({
       ...conversation,
+      annotations: annotationsWithResolution,
       annotationStats,
     });
   } catch (error) {
@@ -102,7 +185,13 @@ export async function GET(req: Request, context: any /* eslint-disable-line @typ
 // Annotator response update
 export async function PATCH(req: Request) {
   try {
-    const { id, annotationId, updatedAnswer, name } = await req.json();
+    const {
+      id,
+      annotationId,
+      updatedAnswer,
+      name,
+      action = "annotate",
+    } = await req.json();
 
     if (!id || !annotationId || !updatedAnswer || !name) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -126,6 +215,28 @@ export async function PATCH(req: Request) {
 
     if (annotationIndex === -1) {
       return NextResponse.json({ error: "Annotation not found" }, { status: 404 });
+    }
+
+    // Admin resolution update
+    if (action === "resolve") {
+      const adminResolution = {
+        content: Array.from(new Set(updatedAnswer)),
+        name,
+        timestamp: Date.now(),
+      };
+
+      await collection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            [`annotations.${annotationIndex}.adminResolution`]: adminResolution,
+          },
+        }
+      );
+
+      return NextResponse.json({
+        message: "Annotation resolved successfully",
+      });
     }
 
     const annotation = conversation.annotations[annotationIndex];

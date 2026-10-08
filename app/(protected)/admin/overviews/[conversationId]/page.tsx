@@ -69,9 +69,109 @@ export default function SummaryPage({
       </p>
     );
   }
+
+  const resolveAnnotation = async (
+    annotationId: string,
+    answer: string[]
+  ) => {
+    try {
+      const response = await fetch(
+        `/api/conversations/${conversation._id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: conversation._id,
+            annotationId,
+            updatedAnswer: answer,
+            name: "admin",
+            action: "resolve",
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to resolve annotation");
+      }
+
+      const updatedResponse = await fetch(
+        `/api/conversations/${conversation._id}`
+      );
+
+      if (!updatedResponse.ok) {
+        throw new Error("Failed to refresh conversation");
+      }
+
+      const updatedConversation = await updatedResponse.json();
+      setConversation(updatedConversation);
+    } catch (error) {
+      console.error("Error resolving annotation:", error);
+    }
+  };
+
+  const renderFinalAnnotation = (annotation: Annotation) => {
+    if (annotation.resolutionStatus === "pending") {
+      return <span>Pending</span>;
+    }
+
+    if (annotation.resolutionStatus === "consensus") {
+      return (
+        <span>
+          {annotation.effectiveFinalAnnotation?.join(", ")} (Consensus)
+        </span>
+      );
+    }
+
+    if (
+      annotation.resolutionStatus === "disagreement" ||
+      annotation.resolutionStatus === "admin-resolved"
+    ) {
+      return (
+        <div>
+          {annotation.resolutionStatus === "disagreement" ? (
+            <div className="mb-2">
+              Disagreement - admin resolution required
+            </div>
+          ) : (
+            <div className="mb-2">
+              Current: {annotation.effectiveFinalAnnotation?.join(", ")}
+            </div>
+          )}
+
+          <div className="flex gap-2 flex-wrap">
+            {annotation.options?.map((option) => {
+              const isSelected =
+                annotation.effectiveFinalAnnotation?.includes(option);
+
+              return (
+                <button
+                  key={option}
+                  onClick={() =>
+                    resolveAnnotation(annotation._id, [option])
+                  }
+                  className={`px-3 py-1 rounded ${
+                    isSelected
+                      ? "bg-green-500 text-white"
+                      : "bg-blue-500 text-white"
+                  }`}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    return <span>N/A</span>;
+  };
+
   const renderSummary = (annotation: Annotation) => {
     switch (annotation.type) {
-      case "multiple choice":
+      case "multiple choice": {
         const optionCounts = annotation.options?.map((option) => ({
           option,
           count:
@@ -79,39 +179,49 @@ export default function SummaryPage({
               (ans) => ans.content && ans.content.includes(option)
             ).length || 0,
         }));
+
         return (
           <table className="w-full border border-muted-foreground">
             <thead className="bg-secondary border-muted-foreground text-secondary-foreground">
               <tr>
                 <th
                   className="border border-muted-foreground py-2 px-4"
-                  style={{ width: "50%" }}
+                  style={{ width: "25%" }}
                 >
                   Option
                 </th>
                 <th
                   className="border border-muted-foreground py-2 px-4"
-                  style={{ width: "10%" }}
+                  style={{ width: "25%" }}
                 >
                   Count
                 </th>
                 <th
                   className="border border-muted-foreground py-2 px-4"
-                  style={{ width: "40%" }}
+                  style={{ width: "25%" }}
                 >
                   Details
                 </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Final Annotation
+                </th>
               </tr>
             </thead>
+
             <tbody>
               {optionCounts?.map(({ option, count }, index) => (
                 <tr key={index}>
                   <td className="border border-muted-foreground py-2 px-4">
                     {option}
                   </td>
+
                   <td className="border border-muted-foreground py-2 px-4">
                     {count}
                   </td>
+
                   <td className="border border-muted-foreground py-2 px-4">
                     {annotation.answers
                       ?.filter(
@@ -121,11 +231,22 @@ export default function SummaryPage({
                         <div key={index}>{ans.name}</div>
                       ))}
                   </td>
+
+                  {index === 0 && (
+                    <td
+                      rowSpan={optionCounts.length}
+                      className="border border-muted-foreground py-2 px-4"
+                    >
+                      {renderFinalAnnotation(annotation)}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         );
+      }
+
       case "multiple answers": {
         const optionCounts = annotation.options?.map((option) => ({
           option,
@@ -134,39 +255,49 @@ export default function SummaryPage({
               (ans) => ans.content && ans.content.includes(option)
             ).length || 0,
         }));
+
         return (
           <table className="w-full border border-muted-foreground">
             <thead className="bg-secondary text-secondary-foreground">
               <tr>
                 <th
                   className="border border-muted-foreground py-2 px-4"
-                  style={{ width: "50%" }}
+                  style={{ width: "25%" }}
                 >
                   Option
                 </th>
                 <th
                   className="border border-muted-foreground py-2 px-4 text-center"
-                  style={{ width: "10%" }}
+                  style={{ width: "25%" }}
                 >
                   Count
                 </th>
                 <th
-                  className="border border-muted-foreground  py-2 px-4"
-                  style={{ width: "40%" }}
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
                 >
                   Details
                 </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Final Annotation
+                </th>
               </tr>
             </thead>
+
             <tbody>
               {optionCounts?.map(({ option, count }, index) => (
                 <tr key={index}>
                   <td className="border border-muted-foreground py-2 px-4">
                     {option}
                   </td>
+
                   <td className="border border-muted-foreground py-2 px-4 text-center">
                     {count}
                   </td>
+
                   <td className="border border-muted-foreground py-2 px-4">
                     {annotation.answers
                       ?.filter(
@@ -175,23 +306,35 @@ export default function SummaryPage({
                       .map((ans) => ans.name)
                       .join(", ") || "No responses"}
                   </td>
+
+                  {index === 0 && (
+                    <td
+                      rowSpan={optionCounts.length}
+                      className="border border-muted-foreground py-2 px-4"
+                    >
+                      {renderFinalAnnotation(annotation)}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         );
       }
+
       case "scaler": {
         const values =
           annotation.answers?.map((ans) =>
             ans.content ? parseFloat(ans.content[0]) : NaN
           ) || [];
+
         const average =
           values.length > 0
             ? (
                 values.reduce((sum, val) => sum + val, 0) / values.length
               ).toFixed(2)
             : "N/A";
+
         return (
           <table className="w-full border border-muted-foreground">
             <thead className="bg-secondary text-secondary-foreground">
@@ -210,6 +353,7 @@ export default function SummaryPage({
                 </th>
               </tr>
             </thead>
+
             <tbody>
               <tr>
                 <td className="border border-muted-foreground py-2 px-4 text-center">
@@ -229,6 +373,7 @@ export default function SummaryPage({
           </table>
         );
       }
+
       case "textbox": {
         return (
           <table className="w-full border border-muted">
@@ -239,6 +384,7 @@ export default function SummaryPage({
                 </th>
               </tr>
             </thead>
+
             <tbody>
               {annotation.answers?.map((ans, index) => (
                 <tr key={index}>
@@ -253,6 +399,7 @@ export default function SummaryPage({
       }
     }
   };
+
   const toggleMessageIndex = (index: number) => {
     setActiveMessageIndices((prev) => ({
       ...prev,
@@ -281,6 +428,7 @@ export default function SummaryPage({
     setActiveMessageIndices(newIndices);
     setActiveCommentIndices(newIndices);
   };
+
   return (
     <div className="p-4 bg-background text-foreground h-screen flex flex-col">
       <button
@@ -291,9 +439,11 @@ export default function SummaryPage({
           ? "Close All Annotations and Comments"
           : "Open All Annotations and Comments"}
       </button>
+
       <h1 className="text-2xl font-bold mb-4">
         Summary of Annotations Conversation Level
       </h1>
+
       {conversation.annotationStats && (
         <div className="mb-4">
           <table className="w-full border border-muted-foreground">
@@ -301,24 +451,25 @@ export default function SummaryPage({
               <tr>
                 <th
                   className="border border-muted-foreground py-2 px-4"
-                  style={{ width: "50%" }}
+                  style={{ width: "25%" }}
                 >
                   Annotation Status
                 </th>
                 <th
                   className="border border-muted-foreground py-2 px-4 text-center"
-                  style={{ width: "10%" }}
+                  style={{ width: "25%" }}
                 >
                   Count
                 </th>
                 <th
                   className="border border-muted-foreground py-2 px-4"
-                  style={{ width: "40%" }}
+                  style={{ width: "50%" }}
                 >
                   Annotators
                 </th>
               </tr>
             </thead>
+
             <tbody>
               <tr>
                 <td className="border border-muted-foreground py-2 px-4">
@@ -333,6 +484,7 @@ export default function SummaryPage({
                     : "None"}
                 </td>
               </tr>
+
               <tr>
                 <td className="border border-muted-foreground py-2 px-4">
                   In Progress
@@ -346,6 +498,7 @@ export default function SummaryPage({
                     : "None"}
                 </td>
               </tr>
+
               <tr>
                 <td className="border border-muted-foreground py-2 px-4">
                   Annotated
@@ -363,15 +516,18 @@ export default function SummaryPage({
           </table>
         </div>
       )}
+
       {conversation.annotations?.map((annotation, index) => (
         <div key={index} className="mb-4">
           <h2 className="text-lg font-semibold">{annotation.title}</h2>
           {renderSummary(annotation)}
         </div>
       ))}
+
       <h1 className="text-2xl font-bold mb-4">
         Summary of Annotations Message Level
       </h1>
+
       {conversation.messages.map((message, index) => (
         <div
           key={index}
@@ -388,7 +544,9 @@ export default function SummaryPage({
           >
             {message.role === "user" ? "You" : "AI"}
           </p>
+
           <p className="mt-2 leading-relaxed">{message.content}</p>
+
           <button
             className="bg-yellow-200 rounded-md p-2 text-black mt-2 hover:bg-yellow-300 ease-in-out transition duration-300 mr-2"
             onClick={() => {
@@ -399,6 +557,7 @@ export default function SummaryPage({
               ? "Hide Annotations"
               : "Show Annotations"}
           </button>
+
           <button
             className={`bg-yellow-200 rounded-md p-2 text-black mt-2 hover:bg-yellow-300 ease-in-out transition duration-300 ${
               hasComments[index] ? "glow-button text-red-600" : ""
@@ -409,6 +568,7 @@ export default function SummaryPage({
           >
             {activeCommentIndices[index] ? "Hide Comments" : "Show Comments"}
           </button>
+
           {activeMessageIndices[index] && (
             <div className="mt-2">
               {message.annotations?.map((annotation, index) => (
@@ -419,6 +579,7 @@ export default function SummaryPage({
               ))}
             </div>
           )}
+
           {activeCommentIndices[index] && (
             <div className="mt-4 space-y-4">
               {message.comments?.map((comment, idx) => (
@@ -434,6 +595,7 @@ export default function SummaryPage({
                       {new Date(comment.timestamp).toLocaleString()}
                     </span>
                   </div>
+
                   <p className="mt-2 text-gray-800 dark:text-gray-200 leading-relaxed">
                     {comment.content}
                   </p>

@@ -294,6 +294,75 @@ export default function SummaryPage({
       <h1 className="text-2xl font-bold mb-4">
         Summary of Annotations Conversation Level
       </h1>
+      {conversation.annotationStats && (
+        <div className="mb-4">
+          <table className="w-full border border-muted-foreground">
+            <thead className="bg-secondary text-secondary-foreground">
+              <tr>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "50%" }}
+                >
+                  Annotation Status
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4 text-center"
+                  style={{ width: "10%" }}
+                >
+                  Count
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "40%" }}
+                >
+                  Annotators
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="border border-muted-foreground py-2 px-4">
+                  Not Annotated
+                </td>
+                <td className="border border-muted-foreground py-2 px-4 text-center">
+                  {conversation.annotationStats.notAnnotated}
+                </td>
+                <td className="border border-muted-foreground py-2 px-4">
+                  {conversation.annotationStats.notAnnotatedUsers.length > 0
+                    ? conversation.annotationStats.notAnnotatedUsers.join(", ")
+                    : "None"}
+                </td>
+              </tr>
+              <tr>
+                <td className="border border-muted-foreground py-2 px-4">
+                  In Progress
+                </td>
+                <td className="border border-muted-foreground py-2 px-4 text-center">
+                  {conversation.annotationStats.inProgress}
+                </td>
+                <td className="border border-muted-foreground py-2 px-4">
+                  {conversation.annotationStats.inProgressUsers.length > 0
+                    ? conversation.annotationStats.inProgressUsers.join(", ")
+                    : "None"}
+                </td>
+              </tr>
+              <tr>
+                <td className="border border-muted-foreground py-2 px-4">
+                  Annotated
+                </td>
+                <td className="border border-muted-foreground py-2 px-4 text-center">
+                  {conversation.annotationStats.annotated}
+                </td>
+                <td className="border border-muted-foreground py-2 px-4">
+                  {conversation.annotationStats.annotatedUsers.length > 0
+                    ? conversation.annotationStats.annotatedUsers.join(", ")
+                    : "None"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
       {conversation.annotations?.map((annotation, index) => (
         <div key={index} className="mb-4">
           <h2 className="text-lg font-semibold">{annotation.title}</h2>

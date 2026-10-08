@@ -42,6 +42,7 @@ export interface Conversation {
   };
   person?: string;
   Person?: string;
+  annotationStats?: AnnotationStats;
 }
 
 export interface User {
@@ -59,11 +60,20 @@ export interface User {
   isDeleted: boolean;
 }
 
-
 export interface Database {
   _id: string;
   uri: string;
   databaseId: string;
   containerId: string;
   name: string;
+}
+
+export interface AnnotationStats {
+  annotated: number;
+  inProgress: number;
+  notAnnotated: number;
+  totalAssigned: number;
+  annotatedUsers: string[];
+  inProgressUsers: string[];
+  notAnnotatedUsers: string[];
 }

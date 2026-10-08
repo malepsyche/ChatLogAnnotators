@@ -1,7 +1,7 @@
 // this API is for fetching each conversation and the patch is for annotating the conversation.
 
 import { NextResponse } from "next/server";
-import { getCollection } from "@/lib/cosmosdb";
+import { getCollection, getUserCollection } from "@/lib/cosmosdb";
 import { ObjectId } from "mongodb";
 
 export async function GET(req: Request, context: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) {
@@ -10,13 +10,89 @@ export async function GET(req: Request, context: any /* eslint-disable-line @typ
     const { id } = params;
 
     const collection = await getCollection();
+    const userCollection = await getUserCollection();
     const conversation = await collection.findOne({ _id: new ObjectId(id) });
 
     if (!conversation) {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
     }
 
-    return NextResponse.json(conversation);
+    const users = await userCollection
+      .find({
+        role: "annotator",
+        isDeleted: false,
+      })
+      .toArray();
+
+    const assignedUsers = users.filter((user) => {
+      if (!user.assignedConversations) {
+        return false;
+      }
+
+      return Object.values(user.assignedConversations).some(
+        (database: any) =>
+          database.assignments?.some((assignment: any) =>
+            assignment.conversations?.includes(id)
+          )
+      );
+    });
+
+    const allAnnotations = [
+      ...(conversation.annotations ?? []),
+      ...(conversation.messages ?? []).flatMap(
+        (message: any) => message.annotations ?? []
+      ),
+    ];
+
+    let annotated = 0;
+    let inProgress = 0;
+    let notAnnotated = 0;
+
+    const annotatedUsers: string[] = [];
+    const inProgressUsers: string[] = [];
+    const notAnnotatedUsers: string[] = [];
+    
+    for (const user of assignedUsers) {
+      const answeredCount = allAnnotations.filter(
+        (annotation: any) =>
+          annotation.answers?.some(
+            (answer: any) =>
+              typeof answer === "object" &&
+              answer !== null &&
+              answer.name === user.username
+          )
+      ).length;
+
+      if (answeredCount === 0) {
+        notAnnotated++;
+        notAnnotatedUsers.push(user.username);
+      } else if (
+        allAnnotations.length > 0 &&
+        answeredCount === allAnnotations.length
+      ) {
+        annotated++;
+        annotatedUsers.push(user.username);
+      } else {
+        inProgress++;
+        inProgressUsers.push(user.username);
+      }
+    }
+
+    const annotationStats = {
+      annotated,
+      inProgress,
+      notAnnotated,
+      totalAssigned: assignedUsers.length,
+
+      annotatedUsers,
+      inProgressUsers,
+      notAnnotatedUsers,
+    };
+
+    return NextResponse.json({
+      ...conversation,
+      annotationStats,
+    });
   } catch (error) {
     console.error("Error fetching conversation:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

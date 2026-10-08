@@ -82,38 +82,6 @@ export default function ConversationPage({
       })
       .then(() => {
         toast.success("Answer saved successfully");
-
-        setConversation((prev) =>
-          prev
-            ? {
-                ...prev,
-                annotations: prev.annotations?.map((annotation) =>
-                  annotation._id === annotationId
-                    ? {
-                        ...annotation,
-                        answers: annotation.answers?.some(
-                          (ans) => ans.name === username
-                        )
-                          ? annotation.answers.map((ans) =>
-                              ans.name === username
-                                ? { ...ans, content: updatedContent }
-                                : ans
-                            )
-                          : [
-                              ...annotation.answers,
-                              {
-                                _id: new Date().toISOString(),
-                                name: username,
-                                timestamp: Date.now(),
-                                content: updatedContent,
-                              },
-                            ],
-                      }
-                    : annotation
-                ),
-              }
-            : null
-        );
       })
       .catch((err) => {
         console.error("Error saving answer:", err);
@@ -161,44 +129,6 @@ export default function ConversationPage({
       })
       .then(() => {
         toast.success("Message annotation saved successfully");
-        setConversation((prev) =>
-          prev
-            ? {
-                ...prev,
-                messages: prev.messages.map((message, index) =>
-                  index === activeMessageIndex
-                    ? {
-                        ...message,
-                        annotations: message.annotations?.map((annotation) =>
-                          annotation._id === annotationId
-                            ? {
-                                ...annotation,
-                                answers: annotation.answers?.some(
-                                  (ans) => ans.name === username
-                                )
-                                  ? annotation.answers.map((ans) =>
-                                      ans.name === username
-                                        ? { ...ans, content: updatedContent }
-                                        : ans
-                                    )
-                                  : [
-                                      ...annotation.answers,
-                                      {
-                                        _id: new Date().toISOString(),
-                                        name: username,
-                                        timestamp: Date.now(),
-                                        content: updatedContent,
-                                      },
-                                    ],
-                              }
-                            : annotation
-                        ),
-                      }
-                    : message
-                ),
-              }
-            : null
-        );
       })
       .catch((err) => {
         console.error("Error saving message annotation:", err);
@@ -371,8 +301,6 @@ export default function ConversationPage({
                               }
                             : null
                         );
-
-                        handleSaveAnswer(annotation._id, [e.target.value]);
                       }}
                       onBlur={(e) =>
                         handleSaveAnswer(annotation._id, [e.target.value])
@@ -456,11 +384,7 @@ export default function ConversationPage({
                               );
 
                               handleSaveAnswer(annotation._id, [option]);
-
                             }}
-                            onBlur={() =>
-                              handleSaveAnswer(annotation._id, [option])
-                            }
                           />
                           <span>{option}</span>
                         </label>
@@ -477,22 +401,39 @@ export default function ConversationPage({
                         >
                           <input
                             type="checkbox"
-                            checked={annotation.answers
-                              ?.find(
-                                (ans) =>
-                                  ans.name ===
-                                  (document.cookie
-                                    .split("; ")
-                                    .find((row) => row.startsWith("username="))
-                                    ?.split("=")[1] || "Anonymous")
-                              )
-                              ?.content?.includes(option)}
+                            checked={
+                              annotation.answers
+                                ?.find(
+                                  (ans) =>
+                                    ans.name ===
+                                    (document.cookie
+                                      .split("; ")
+                                      .find((row) =>
+                                        row.startsWith("username=")
+                                      )
+                                      ?.split("=")[1] || "Anonymous")
+                                )
+                                ?.content?.includes(option) || false
+                            }
                             onChange={(e) => {
                               const username =
                                 document.cookie
                                   .split("; ")
                                   .find((row) => row.startsWith("username="))
                                   ?.split("=")[1] || "Anonymous";
+
+                              const currentContent =
+                                annotation.answers?.find(
+                                  (ans) => ans.name === username
+                                )?.content || [];
+
+                              const updatedContent = e.target.checked
+                                ? Array.from(
+                                    new Set([...currentContent, option])
+                                  )
+                                : currentContent.filter(
+                                    (ansOpt) => ansOpt !== option
+                                  );
 
                               setConversation((prev) =>
                                 prev
@@ -511,21 +452,8 @@ export default function ConversationPage({
                                                       ans.name === username
                                                         ? {
                                                             ...ans,
-                                                            content: e.target
-                                                              .checked
-                                                              ? [
-                                                                  ...(ans.content ||
-                                                                    []),
-                                                                  option,
-                                                                ]
-                                                              : (
-                                                                  ans.content ||
-                                                                  []
-                                                                ).filter(
-                                                                  (opt) =>
-                                                                    opt !==
-                                                                    option
-                                                                ),
+                                                            content:
+                                                              updatedContent,
                                                           }
                                                         : ans
                                                     )
@@ -535,10 +463,8 @@ export default function ConversationPage({
                                                         _id: new Date().toISOString(),
                                                         name: username,
                                                         timestamp: Date.now(),
-                                                        content: e.target
-                                                          .checked
-                                                          ? [option]
-                                                          : [],
+                                                        content:
+                                                          updatedContent,
                                                       },
                                                     ]
                                                 : [
@@ -546,9 +472,7 @@ export default function ConversationPage({
                                                       _id: new Date().toISOString(),
                                                       name: username,
                                                       timestamp: Date.now(),
-                                                      content: e.target.checked
-                                                        ? [option]
-                                                        : [],
+                                                      content: updatedContent,
                                                     },
                                                   ],
                                             }
@@ -558,49 +482,9 @@ export default function ConversationPage({
                                   : null
                               );
 
-                              const updatedContent =
-                                annotation.answers
-                                  ?.find(
-                                    (ans) =>
-                                      ans.name ===
-                                      (document.cookie
-                                        .split("; ")
-                                        .find((row) =>
-                                          row.startsWith("username=")
-                                        )
-                                        ?.split("=")[1] || "Anonymous")
-                                  )
-                                  ?.content?.filter(
-                                    (ansOpt) => ansOpt !== option
-                                  ) || [];
                               handleSaveAnswer(
                                 annotation._id,
-                                e.target.checked
-                                  ? [...updatedContent, option]
-                                  : updatedContent
-                              );
-                            }}
-                            onBlur={(e) => {
-                              const updatedContent =
-                                annotation.answers
-                                  ?.find(
-                                    (ans) =>
-                                      ans.name ===
-                                      (document.cookie
-                                        .split("; ")
-                                        .find((row) =>
-                                          row.startsWith("username=")
-                                        )
-                                        ?.split("=")[1] || "Anonymous")
-                                  )
-                                  ?.content?.filter(
-                                    (ansOpt) => ansOpt !== option
-                                  ) || [];
-                              handleSaveAnswer(
-                                annotation._id,
-                                e.target.checked
-                                  ? [...updatedContent, option]
-                                  : updatedContent
+                                updatedContent
                               );
                             }}
                           />
@@ -680,8 +564,6 @@ export default function ConversationPage({
                                 }
                               : null
                           );
-
-                          handleSaveAnswer(annotation._id, [e.target.value]);
                         }}
                         onBlur={(e) =>
                           handleSaveAnswer(annotation._id, [e.target.value])
@@ -705,6 +587,7 @@ export default function ConversationPage({
           </tbody>
         </table>
       </div>
+
       <div className="space-y-4">
         <h1 className="text-2xl font-bold text-foreground">Conversations</h1>
         {conversation.messages.map((message, index) => (
@@ -724,6 +607,7 @@ export default function ConversationPage({
               {message.role === "user" ? "You" : "AI"}
             </p>
             <p className="mt-2 leading-relaxed">{message.content}</p>
+
             <button
               className="bg-yellow-200 rounded-md p-2 text-black mt-2 hover:bg-yellow-300 ease-in-out transition duration-300"
               onClick={() => {
@@ -737,6 +621,7 @@ export default function ConversationPage({
                 ? "Hide Annotations"
                 : "Show Annotations"}
             </button>
+
             {activeMessageIndex === index && (
               <table className="w-full mt-2 border border-muted shadow-sm mb-3 text-foreground">
                 <thead className="bg-secondary text-secondary-foreground">
@@ -755,12 +640,14 @@ export default function ConversationPage({
                     </th>
                   </tr>
                 </thead>
+
                 <tbody>
                   {messageAnnotation.map((annotation) => (
                     <tr key={annotation._id} className="even:bg-secondary">
                       <td className="py-2 px-4 border border-muted">
                         {annotation.title}
                       </td>
+
                       <td className="py-2 px-4 border border-muted">
                         {annotation.type === "textbox" && (
                           <textarea
@@ -820,10 +707,6 @@ export default function ConversationPage({
                                     : a
                                 )
                               );
-
-                              handleSaveMessageAnnotation(annotation._id, [
-                                e.target.value,
-                              ]);
                             }}
                             onBlur={(e) =>
                               handleSaveMessageAnnotation(annotation._id, [
@@ -911,14 +794,7 @@ export default function ConversationPage({
                                       annotation._id,
                                       [option]
                                     );
-
                                   }}
-                                  onBlur={() =>
-                                    handleSaveMessageAnnotation(
-                                      annotation._id,
-                                      [option]
-                                    )
-                                  }
                                 />
                                 <span>{option}</span>
                               </label>
@@ -958,6 +834,22 @@ export default function ConversationPage({
                                         )
                                         ?.split("=")[1] || "Anonymous";
 
+                                    const currentContent =
+                                      annotation.answers?.find(
+                                        (ans) => ans.name === username
+                                      )?.content || [];
+
+                                    const updatedContent = e.target.checked
+                                      ? Array.from(
+                                          new Set([
+                                            ...currentContent,
+                                            option,
+                                          ])
+                                        )
+                                      : currentContent.filter(
+                                          (ansOpt) => ansOpt !== option
+                                        );
+
                                     setMessageAnnotation((prev) =>
                                       prev.map((a) =>
                                         a._id === annotation._id
@@ -972,25 +864,8 @@ export default function ConversationPage({
                                                       ans.name === username
                                                         ? {
                                                             ...ans,
-                                                            content: e.target
-                                                              .checked
-                                                              ? ans.content?.includes(
-                                                                  option
-                                                                )
-                                                                ? ans.content
-                                                                : [
-                                                                    ...(ans.content ||
-                                                                      []),
-                                                                    option,
-                                                                  ]
-                                                              : (
-                                                                  ans.content ||
-                                                                  []
-                                                                ).filter(
-                                                                  (ansOpt) =>
-                                                                    ansOpt !==
-                                                                    option
-                                                                ),
+                                                            content:
+                                                              updatedContent,
                                                           }
                                                         : ans
                                                     )
@@ -1000,10 +875,8 @@ export default function ConversationPage({
                                                         _id: new Date().toISOString(),
                                                         name: username,
                                                         timestamp: Date.now(),
-                                                        content: e.target
-                                                          .checked
-                                                          ? [option]
-                                                          : [],
+                                                        content:
+                                                          updatedContent,
                                                       },
                                                     ]
                                                 : [
@@ -1011,75 +884,13 @@ export default function ConversationPage({
                                                       _id: new Date().toISOString(),
                                                       name: username,
                                                       timestamp: Date.now(),
-                                                      content: e.target.checked
-                                                        ? [option]
-                                                        : [],
+                                                      content: updatedContent,
                                                     },
                                                   ],
                                             }
                                           : a
                                       )
                                     );
-
-                                    const updatedContent = e.target.checked
-                                      ? [
-                                          ...(annotation.answers?.find(
-                                            (ans) =>
-                                              ans.name ===
-                                              (document.cookie
-                                                .split("; ")
-                                                .find((row) =>
-                                                  row.startsWith("username=")
-                                                )
-                                                ?.split("=")[1] || "Anonymous")
-                                          )?.content || []),
-                                          option,
-                                        ]
-                                      : (
-                                          annotation.answers?.find(
-                                            (ans) =>
-                                              ans.name ===
-                                              (document.cookie
-                                                .split("; ")
-                                                .find((row) =>
-                                                  row.startsWith("username=")
-                                                )
-                                                ?.split("=")[1] || "Anonymous")
-                                          )?.content || []
-                                        ).filter((ansOpt) => ansOpt !== option);
-
-                                    handleSaveMessageAnnotation(
-                                      annotation._id,
-                                      updatedContent
-                                    );
-                                  }}
-                                  onBlur={(e) => {
-                                    const updatedContent = e.target.checked
-                                      ? [
-                                          ...(annotation.answers?.find(
-                                            (ans) =>
-                                              ans.name ===
-                                              (document.cookie
-                                                .split("; ")
-                                                .find((row) =>
-                                                  row.startsWith("username=")
-                                                )
-                                                ?.split("=")[1] || "Anonymous")
-                                          )?.content || []),
-                                          option,
-                                        ]
-                                      : (
-                                          annotation.answers?.find(
-                                            (ans) =>
-                                              ans.name ===
-                                              (document.cookie
-                                                .split("; ")
-                                                .find((row) =>
-                                                  row.startsWith("username=")
-                                                )
-                                                ?.split("=")[1] || "Anonymous")
-                                          )?.content || []
-                                        ).filter((ansOpt) => ansOpt !== option);
 
                                     handleSaveMessageAnnotation(
                                       annotation._id,
@@ -1160,10 +971,6 @@ export default function ConversationPage({
                                       : a
                                   )
                                 );
-
-                                handleSaveMessageAnnotation(annotation._id, [
-                                  e.target.value,
-                                ]);
                               }}
                               onBlur={(e) =>
                                 handleSaveMessageAnnotation(annotation._id, [
@@ -1189,11 +996,13 @@ export default function ConversationPage({
                 </tbody>
               </table>
             )}
+
             <div className="mt-2">
               <h2 className="text-lg font-semibold text-foreground">
                 Comments
               </h2>
               <h4>Refresh after each comments addition</h4>
+
               {message.comments
                 ?.filter((comment) => {
                   const cookieValue = document.cookie

@@ -19,10 +19,16 @@ export default function SummaryPage({
     {}
   );
   const [error, setError] = useState<string | null>(null);
+  const [toggleAll, setToggleAll] = useState(false);
 
   useEffect(() => {
     const storedToggleAll = localStorage.getItem("toggleAll");
-    const toggleAll = storedToggleAll ? JSON.parse(storedToggleAll) : false;
+    const initialToggleAll = storedToggleAll
+      ? JSON.parse(storedToggleAll)
+      : false;
+
+    setToggleAll(initialToggleAll);
+
     params
       .then(({ conversationId }) => {
         fetch(`/api/conversations/${conversationId}`)
@@ -32,18 +38,23 @@ export default function SummaryPage({
           })
           .then((data) => {
             setConversation(data);
+
             const commentPresence: { [key: number]: boolean } = {};
+
             data.messages.forEach((message: Message, index: number) => {
               if (message.comments && message.comments.length > 0) {
-                commentPresence[index] = message.comments.length > 0;
+                commentPresence[index] = true;
               }
             });
+
             setHasComments(commentPresence);
+
             const indices: { [key: number]: boolean } = {};
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            data.messages.forEach((_: any, index: number) => {
-              indices[index] = toggleAll;
+
+            data.messages.forEach((_: Message, index: number) => {
+              indices[index] = initialToggleAll;
             });
+
             setActiveMessageIndices(indices);
             setActiveCommentIndices(indices);
           })
@@ -58,22 +69,36 @@ export default function SummaryPage({
       });
   }, [params]);
 
-  if (error) {
-    return <p className="text-red-500 p-4">{error}</p>;
-  }
+  const getAgreementRate = (
+    annotation: Annotation,
+    option: string
+  ): string => {
+    const validAnswers =
+      annotation.answers?.filter(
+        (answer) => answer.content && answer.content.length > 0
+      ) || [];
 
-  if (!conversation) {
-    return (
-      <p className="bg-muted text-muted-foreground p-4 w-width">
-        Loading conversation summary...
-      </p>
-    );
-  }
+    const totalResponses = validAnswers.length;
+
+    if (totalResponses === 0) {
+      return "N/A";
+    }
+
+    const optionCount = validAnswers.filter(
+      (answer) => answer.content.includes(option)
+    ).length;
+
+    const agreementRate = (optionCount / totalResponses) * 100;
+
+    return `${agreementRate.toFixed(1)}%`;
+  };
 
   const resolveAnnotation = async (
     annotationId: string,
     answer: string[]
   ) => {
+    if (!conversation) return;
+
     try {
       const response = await fetch(
         `/api/conversations/${conversation._id}`,
@@ -178,7 +203,7 @@ export default function SummaryPage({
             annotation.answers?.filter(
               (ans) => ans.content && ans.content.includes(option)
             ).length || 0,
-        }));
+        })) || [];
 
         return (
           <table className="w-full border border-muted-foreground">
@@ -186,13 +211,13 @@ export default function SummaryPage({
               <tr>
                 <th
                   className="border border-muted-foreground py-2 px-4"
-                  style={{ width: "25%" }}
+                  style={{ width: "20%" }}
                 >
                   Option
                 </th>
                 <th
                   className="border border-muted-foreground py-2 px-4"
-                  style={{ width: "25%" }}
+                  style={{ width: "15%" }}
                 >
                   Count
                 </th>
@@ -201,6 +226,12 @@ export default function SummaryPage({
                   style={{ width: "25%" }}
                 >
                   Details
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4 text-center"
+                  style={{ width: "15%" }}
+                >
+                  Agreement Rate
                 </th>
                 <th
                   className="border border-muted-foreground py-2 px-4"
@@ -212,7 +243,7 @@ export default function SummaryPage({
             </thead>
 
             <tbody>
-              {optionCounts?.map(({ option, count }, index) => (
+              {optionCounts.map(({ option, count }, index) => (
                 <tr key={index}>
                   <td className="border border-muted-foreground py-2 px-4">
                     {option}
@@ -230,6 +261,10 @@ export default function SummaryPage({
                       .map((ans, index) => (
                         <div key={index}>{ans.name}</div>
                       ))}
+                  </td>
+
+                  <td className="border border-muted-foreground py-2 px-4 text-center">
+                    {getAgreementRate(annotation, option)}
                   </td>
 
                   {index === 0 && (
@@ -254,7 +289,7 @@ export default function SummaryPage({
             annotation.answers?.filter(
               (ans) => ans.content && ans.content.includes(option)
             ).length || 0,
-        }));
+        })) || [];
 
         return (
           <table className="w-full border border-muted-foreground">
@@ -262,13 +297,13 @@ export default function SummaryPage({
               <tr>
                 <th
                   className="border border-muted-foreground py-2 px-4"
-                  style={{ width: "25%" }}
+                  style={{ width: "20%" }}
                 >
                   Option
                 </th>
                 <th
                   className="border border-muted-foreground py-2 px-4 text-center"
-                  style={{ width: "25%" }}
+                  style={{ width: "15%" }}
                 >
                   Count
                 </th>
@@ -277,6 +312,12 @@ export default function SummaryPage({
                   style={{ width: "25%" }}
                 >
                   Details
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4 text-center"
+                  style={{ width: "15%" }}
+                >
+                  Agreement Rate
                 </th>
                 <th
                   className="border border-muted-foreground py-2 px-4"
@@ -288,7 +329,7 @@ export default function SummaryPage({
             </thead>
 
             <tbody>
-              {optionCounts?.map(({ option, count }, index) => (
+              {optionCounts.map(({ option, count }, index) => (
                 <tr key={index}>
                   <td className="border border-muted-foreground py-2 px-4">
                     {option}
@@ -305,6 +346,10 @@ export default function SummaryPage({
                       )
                       .map((ans) => ans.name)
                       .join(", ") || "No responses"}
+                  </td>
+
+                  <td className="border border-muted-foreground py-2 px-4 text-center">
+                    {getAgreementRate(annotation, option)}
                   </td>
 
                   {index === 0 && (
@@ -324,9 +369,11 @@ export default function SummaryPage({
 
       case "scaler": {
         const values =
-          annotation.answers?.map((ans) =>
-            ans.content ? parseFloat(ans.content[0]) : NaN
-          ) || [];
+          annotation.answers
+            ?.map((ans) =>
+              ans.content ? parseFloat(ans.content[0]) : NaN
+            )
+            .filter((value) => !Number.isNaN(value)) || [];
 
         const average =
           values.length > 0
@@ -359,6 +406,7 @@ export default function SummaryPage({
                 <td className="border border-muted-foreground py-2 px-4 text-center">
                   {average}
                 </td>
+
                 <td className="border border-muted-foreground py-2 px-4">
                   {annotation.answers
                     ?.map((ans) =>
@@ -415,22 +463,26 @@ export default function SummaryPage({
   };
 
   const handleToggleAll = () => {
-    const newToggleAll = !JSON.parse(
-      localStorage.getItem("toggleAll") || "false"
-    );
+    const newToggleAll = !toggleAll;
+
+    setToggleAll(newToggleAll);
+
     localStorage.setItem("toggleAll", JSON.stringify(newToggleAll));
+
     const newIndices = Object.keys(activeMessageIndices).reduce<{
       [key: string]: boolean;
     }>((acc, key) => {
       acc[key] = newToggleAll;
       return acc;
     }, {});
+
     setActiveMessageIndices(newIndices);
     setActiveCommentIndices(newIndices);
   };
 
   const toggleConversationLock = async () => {
     if (!conversation) return;
+
     try {
       const response = await fetch(
         `/api/conversations/${conversation._id}/lock`,
@@ -445,20 +497,36 @@ export default function SummaryPage({
           }),
         }
       );
+
       if (!response.ok) {
         throw new Error("Failed to update conversation lock");
       }
+
       const updatedResponse = await fetch(
         `/api/conversations/${conversation._id}`
       );
+
       if (!updatedResponse.ok) {
         throw new Error("Failed to refresh conversation");
       }
+
       setConversation(await updatedResponse.json());
     } catch (error) {
       console.error("Error updating conversation lock:", error);
     }
   };
+
+  if (error) {
+    return <p className="text-red-500 p-4">{error}</p>;
+  }
+
+  if (!conversation) {
+    return (
+      <p className="bg-muted text-muted-foreground p-4 w-width">
+        Loading conversation summary...
+      </p>
+    );
+  }
 
   return (
     <div className="p-4 bg-background text-foreground h-screen flex flex-col">
@@ -466,7 +534,7 @@ export default function SummaryPage({
         onClick={handleToggleAll}
         className="p-2 bg-blue-500 text-white rounded"
       >
-        {JSON.parse(localStorage.getItem("toggleAll") || "false")
+        {toggleAll
           ? "Close All Annotations and Comments"
           : "Open All Annotations and Comments"}
       </button>
@@ -596,7 +664,9 @@ export default function SummaryPage({
         >
           <p
             className={`font-semibold ${
-              message.role === "user" ? "text-muted" : "text-muted-foreground"
+              message.role === "user"
+                ? "text-muted"
+                : "text-muted-foreground"
             }`}
           >
             {message.role === "user" ? "You" : "AI"}
@@ -623,14 +693,19 @@ export default function SummaryPage({
               toggleCommentIndex(index);
             }}
           >
-            {activeCommentIndices[index] ? "Hide Comments" : "Show Comments"}
+            {activeCommentIndices[index]
+              ? "Hide Comments"
+              : "Show Comments"}
           </button>
 
           {activeMessageIndices[index] && (
             <div className="mt-2">
               {message.annotations?.map((annotation, index) => (
                 <div key={index} className="mt-2">
-                  <h3 className="text-lg font-semibold">{annotation.title}</h3>
+                  <h3 className="text-lg font-semibold">
+                    {annotation.title}
+                  </h3>
+
                   {renderSummary(annotation)}
                 </div>
               ))}
@@ -648,6 +723,7 @@ export default function SummaryPage({
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                       {comment.name}
                     </h3>
+
                     <span className="text-sm text-gray-500 dark:text-gray-400">
                       {new Date(comment.timestamp).toLocaleString()}
                     </span>

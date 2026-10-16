@@ -1,9 +1,9 @@
 export interface Message {
-    role: string;
-    content: string;
-    annotations?: Annotation[]
-    comments?: Comment[]
-  }
+  role: string;
+  content: string;
+  annotations?: Annotation[];
+  comments?: Comment[];
+}
 
 export interface Comment {
   _id: string;
@@ -18,7 +18,7 @@ export interface Answer {
   timestamp: number;
   content: string[] | null;
 }
-  
+
 export interface AdminResolution {
   content: string[];
   name: string;
@@ -37,28 +37,54 @@ export interface Annotation {
   type: string;
   options?: string[];
   answers: Answer[];
-
   adminResolution?: AdminResolution;
   resolutionStatus?: ResolutionStatus;
   effectiveFinalAnnotation?: string[] | null;
 }
-  
+
+export interface ConversationLock {
+  isLocked: boolean;
+  lockedBy: string | null;
+  lockedAt: number | null;
+}
+
+export interface EffectiveLock {
+  conversationLocked: boolean;
+  assignmentLocked: boolean;
+  isLocked: boolean;
+}
+
+export interface AnnotationStats {
+  annotated: number;
+  inProgress: number;
+  notAnnotated: number;
+  totalAssigned: number;
+  annotatedUsers: string[];
+  inProgressUsers: string[];
+  notAnnotatedUsers: string[];
+}
+
 export interface Conversation {
   _id: string;
   title: string;
-  stime: {
-    text: string;
-    timestamp: number;
-  };
+  stime: { text: string; timestamp: number };
   messages: Message[];
   annotations?: Annotation[];
-  last_interact: {
-    text: string;
-    timestamp: number;
-  };
+  last_interact: { text: string; timestamp: number };
   person?: string;
   Person?: string;
   annotationStats?: AnnotationStats;
+  lock?: ConversationLock;
+  effectiveLock?: EffectiveLock;
+}
+
+export interface Assignment {
+  _id: string;
+  title: string;
+  databaseId: string;
+  conversations: string[];
+  annotators: string[];
+  lock?: ConversationLock;
 }
 
 export interface User {
@@ -73,6 +99,8 @@ export interface User {
       }[];
     };
   };
+  activeDatabaseId?: string;
+  activeAssignment?: string;
   isDeleted: boolean;
 }
 
@@ -82,14 +110,4 @@ export interface Database {
   databaseId: string;
   containerId: string;
   name: string;
-}
-
-export interface AnnotationStats {
-  annotated: number;
-  inProgress: number;
-  notAnnotated: number;
-  totalAssigned: number;
-  annotatedUsers: string[];
-  inProgressUsers: string[];
-  notAnnotatedUsers: string[];
 }

@@ -1,31 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Conversation, Annotation } from "@/types/conversations";
-import { toast } from "react-toastify";
+import { useState, useEffect } from "react";
+import { Conversation, Annotation, Message } from "@/types/conversations";
 
-export default function ConversationPage({
+export default function SummaryPage({
   params,
 }: {
   params: Promise<{ conversationId: string }>;
 }) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [activeMessageIndex, setActiveMessageIndex] = useState<number | null>(
-    null
+  const [activeMessageIndices, setActiveMessageIndices] = useState<{
+    [index: number]: boolean;
+  }>({});
+  const [activeCommentIndices, setActiveCommentIndices] = useState<{
+    [index: number]: boolean;
+  }>({});
+  const [hasComments, setHasComments] = useState<{ [key: number]: boolean }>(
+    {}
   );
-  const [messageAnnotation, setMessageAnnotation] = useState<Annotation[]>([]);
-  const [localCommentContent, setLocalCommentContent] = useState<
-    Record<number, string>
-  >({});
-  const [refreshTrigger, setRefreshTrigger] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const storedToggleAll = localStorage.getItem("toggleAll");
+    const toggleAll = storedToggleAll ? JSON.parse(storedToggleAll) : false;
     params
       .then(({ conversationId }) => {
-        setConversationId(conversationId);
-
         fetch(`/api/conversations/${conversationId}`)
           .then((res) => {
             if (!res.ok) throw new Error("Failed to fetch conversation");
@@ -33,238 +32,31 @@ export default function ConversationPage({
           })
           .then((data) => {
             setConversation(data);
+            const commentPresence: { [key: number]: boolean } = {};
+            data.messages.forEach((message: Message, index: number) => {
+              if (message.comments && message.comments.length > 0) {
+                commentPresence[index] = message.comments.length > 0;
+              }
+            });
+            setHasComments(commentPresence);
+            const indices: { [key: number]: boolean } = {};
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            data.messages.forEach((_: any, index: number) => {
+              indices[index] = toggleAll;
+            });
+            setActiveMessageIndices(indices);
+            setActiveCommentIndices(indices);
           })
           .catch((error) => {
-            toast.error("Error fetching conversation:", error);
+            console.error("Error fetching conversation:", error);
             setError("Failed to load conversation");
           });
       })
       .catch((error) => {
-        toast.error("Error resolving params:", error);
+        console.error("Error resolving params:", error);
         setError("Invalid conversation ID");
       });
-  }, [params, refreshTrigger]);
-
-  const handleSaveAnswer = (annotationId: string, updatedContent: string[]) => {
-    if (!conversationId) return;
-
-    const cookieValue = document.cookie
-      .split("; ")
-      .find((row) => row.startsWith("username="))
-      ?.split("=")[1];
-    const username = cookieValue
-      ? decodeURIComponent(cookieValue)
-      : "Anonymous";
-
-    const payload = {
-      id: conversationId,
-      annotationId,
-      updatedAnswer: updatedContent,
-      name: username,
-    };
-
-    console.log("Payload being sent to server:", payload);
-
-    fetch(`/api/conversations/${conversationId}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    })
-      .then((res) => {
-        if (!res.ok) {
-          return res.json().then((err) => {
-            throw new Error(err.message || "Failed to save answer");
-          });
-        }
-        return res.json();
-      })
-      .then(() => {
-        toast.success("Answer saved successfully");
-
-        setConversation((prev) =>
-          prev
-            ? {
-                ...prev,
-                annotations: prev.annotations?.map((annotation) =>
-                  annotation._id === annotationId
-                    ? {
-                        ...annotation,
-                        answers: annotation.answers?.some(
-                          (ans) => ans.name === username
-                        )
-                          ? annotation.answers.map((ans) =>
-                              ans.name === username
-                                ? { ...ans, content: updatedContent }
-                                : ans
-                            )
-                          : [
-                              ...annotation.answers,
-                              {
-                                _id: new Date().toISOString(),
-                                name: username,
-                                timestamp: Date.now(),
-                                content: updatedContent,
-                              },
-                            ],
-                      }
-                    : annotation
-                ),
-              }
-            : null
-        );
-      })
-      .catch((err) => {
-        console.error("Error saving answer:", err);
-        toast.error("Error saving answer: " + err.message);
-      });
-  };
-
-  const handleSaveMessageAnnotation = (
-    annotationId: string,
-    updatedContent: string[]
-  ) => {
-    if (!conversationId || activeMessageIndex === null) return;
-
-    const cookieValue = document.cookie
-      .split("; ")
-      .find((row) => row.startsWith("username="))
-      ?.split("=")[1];
-    const username = cookieValue
-      ? decodeURIComponent(cookieValue)
-      : "Anonymous";
-
-    const payload = {
-      id: conversationId,
-      messageIndex: activeMessageIndex,
-      annotationId,
-      updatedAnswer: updatedContent,
-      name: username,
-    };
-
-    console.log("Payload being sent to server (Message Level):", payload);
-
-    fetch(
-      `/api/conversations/${conversationId}/messages/${activeMessageIndex}`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      }
-    )
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to save message annotation");
-        return res.json();
-      })
-      .then(() => {
-        toast.success("Message annotation saved successfully");
-        setConversation((prev) =>
-          prev
-            ? {
-                ...prev,
-                messages: prev.messages.map((message, index) =>
-                  index === activeMessageIndex
-                    ? {
-                        ...message,
-                        annotations: message.annotations?.map((annotation) =>
-                          annotation._id === annotationId
-                            ? {
-                                ...annotation,
-                                answers: annotation.answers?.some(
-                                  (ans) => ans.name === username
-                                )
-                                  ? annotation.answers.map((ans) =>
-                                      ans.name === username
-                                        ? { ...ans, content: updatedContent }
-                                        : ans
-                                    )
-                                  : [
-                                      ...annotation.answers,
-                                      {
-                                        _id: new Date().toISOString(),
-                                        name: username,
-                                        timestamp: Date.now(),
-                                        content: updatedContent,
-                                      },
-                                    ],
-                              }
-                            : annotation
-                        ),
-                      }
-                    : message
-                ),
-              }
-            : null
-        );
-      })
-      .catch((err) => {
-        console.error("Error saving message annotation:", err);
-        toast.error("Error saving message annotation: " + err.message);
-      });
-  };
-
-  const handleDeleteComment = (messageIndex: number, commentId: string) => {
-    if (!conversationId || !commentId) return;
-
-    fetch(`/api/conversations/${conversationId}/messages/${messageIndex}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: conversationId,
-        commentId,
-      }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to delete comment");
-        return res.json();
-      })
-      .then(() => {
-        toast.success("Comment deleted successfully");
-        setRefreshTrigger((prev) => !prev);
-      })
-      .catch((err) => toast.error("Error deleting comment: " + err.message));
-  };
-
-  const handleAddComment = (messageIndex: number, commentContent: string) => {
-    const cookieValue = document.cookie
-      .split("; ")
-      .find((row) => row.startsWith("username="))
-      ?.split("=")[1];
-
-    const username = cookieValue
-      ? decodeURIComponent(cookieValue)
-      : "Anonymous";
-
-    if (!conversationId || !commentContent) return;
-
-    fetch(`/api/conversations/${conversationId}/messages/${messageIndex}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        id: conversationId,
-        comment: {
-          name: username,
-          timestamp: Date.now(),
-          content: commentContent,
-        },
-      }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to add comment");
-        return res.json();
-      })
-      .then(() => {
-        toast.success("Comment added successfully");
-        setRefreshTrigger((prev) => !prev);
-        setLocalCommentContent((prev) => ({ ...prev, [messageIndex]: "" }));
-      })
-      .catch((err) => toast.error("Error adding comment: " + err.message));
-  };
+  }, [params]);
 
   if (error) {
     return <p className="text-red-500 p-4">{error}</p>;
@@ -273,915 +65,603 @@ export default function ConversationPage({
   if (!conversation) {
     return (
       <p className="bg-muted text-muted-foreground p-4 w-width">
-        Loading conversation...
+        Loading conversation summary...
       </p>
     );
   }
 
-  return (
-    <div className="p-4 bg-background text-foreground h-screen flex flex-col">
-      <div className="flex-none">
-        <h1 className="text-2xl font-bold text-foreground">
-          Home: Annotate The Message
-        </h1>
-        <table className="w-full mt-2 border border-muted shadow-sm mb-3 text-foreground">
-          <thead className="bg-secondary text-secondary-foreground">
-            <tr>
-              <th
-                className="border py-2 px-4 text-left"
-                style={{ width: "30%" }}
-              >
-                Title
-              </th>
-              <th
-                className="border py-2 px-4 text-left"
-                style={{ width: "60%" }}
-              >
-                Answer
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {conversation.annotations?.map((annotation) => (
-              <tr key={annotation._id} className="even:bg-secondary">
-                <td className="py-2 px-4 border border-muted">
-                  {annotation.title}
+  const resolveAnnotation = async (
+    annotationId: string,
+    answer: string[]
+  ) => {
+    try {
+      const response = await fetch(
+        `/api/conversations/${conversation._id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: conversation._id,
+            annotationId,
+            updatedAnswer: answer,
+            name: "admin",
+            action: "resolve",
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to resolve annotation");
+      }
+
+      const updatedResponse = await fetch(
+        `/api/conversations/${conversation._id}`
+      );
+
+      if (!updatedResponse.ok) {
+        throw new Error("Failed to refresh conversation");
+      }
+
+      const updatedConversation = await updatedResponse.json();
+      setConversation(updatedConversation);
+    } catch (error) {
+      console.error("Error resolving annotation:", error);
+    }
+  };
+
+  const renderFinalAnnotation = (annotation: Annotation) => {
+    if (annotation.resolutionStatus === "pending") {
+      return <span>Pending</span>;
+    }
+
+    if (annotation.resolutionStatus === "consensus") {
+      return (
+        <span>
+          {annotation.effectiveFinalAnnotation?.join(", ")} (Consensus)
+        </span>
+      );
+    }
+
+    if (
+      annotation.resolutionStatus === "disagreement" ||
+      annotation.resolutionStatus === "admin-resolved"
+    ) {
+      return (
+        <div>
+          {annotation.resolutionStatus === "disagreement" ? (
+            <div className="mb-2">
+              Disagreement - admin resolution required
+            </div>
+          ) : (
+            <div className="mb-2">
+              Current: {annotation.effectiveFinalAnnotation?.join(", ")}
+            </div>
+          )}
+
+          <div className="flex gap-2 flex-wrap">
+            {annotation.options?.map((option) => {
+              const isSelected =
+                annotation.effectiveFinalAnnotation?.includes(option);
+
+              return (
+                <button
+                  key={option}
+                  onClick={() =>
+                    resolveAnnotation(annotation._id, [option])
+                  }
+                  className={`px-3 py-1 rounded ${
+                    isSelected
+                      ? "bg-green-500 text-white"
+                      : "bg-blue-500 text-white"
+                  }`}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    return <span>N/A</span>;
+  };
+
+  const renderSummary = (annotation: Annotation) => {
+    switch (annotation.type) {
+      case "multiple choice": {
+        const optionCounts = annotation.options?.map((option) => ({
+          option,
+          count:
+            annotation.answers?.filter(
+              (ans) => ans.content && ans.content.includes(option)
+            ).length || 0,
+        }));
+
+        return (
+          <table className="w-full border border-muted-foreground">
+            <thead className="bg-secondary border-muted-foreground text-secondary-foreground">
+              <tr>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Option
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Count
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Details
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Final Annotation
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {optionCounts?.map(({ option, count }, index) => (
+                <tr key={index}>
+                  <td className="border border-muted-foreground py-2 px-4">
+                    {option}
+                  </td>
+
+                  <td className="border border-muted-foreground py-2 px-4">
+                    {count}
+                  </td>
+
+                  <td className="border border-muted-foreground py-2 px-4">
+                    {annotation.answers
+                      ?.filter(
+                        (ans) => ans.content && ans.content.includes(option)
+                      )
+                      .map((ans, index) => (
+                        <div key={index}>{ans.name}</div>
+                      ))}
+                  </td>
+
+                  {index === 0 && (
+                    <td
+                      rowSpan={optionCounts.length}
+                      className="border border-muted-foreground py-2 px-4"
+                    >
+                      {renderFinalAnnotation(annotation)}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      }
+
+      case "multiple answers": {
+        const optionCounts = annotation.options?.map((option) => ({
+          option,
+          count:
+            annotation.answers?.filter(
+              (ans) => ans.content && ans.content.includes(option)
+            ).length || 0,
+        }));
+
+        return (
+          <table className="w-full border border-muted-foreground">
+            <thead className="bg-secondary text-secondary-foreground">
+              <tr>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Option
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4 text-center"
+                  style={{ width: "25%" }}
+                >
+                  Count
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Details
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Final Annotation
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {optionCounts?.map(({ option, count }, index) => (
+                <tr key={index}>
+                  <td className="border border-muted-foreground py-2 px-4">
+                    {option}
+                  </td>
+
+                  <td className="border border-muted-foreground py-2 px-4 text-center">
+                    {count}
+                  </td>
+
+                  <td className="border border-muted-foreground py-2 px-4">
+                    {annotation.answers
+                      ?.filter(
+                        (ans) => ans.content && ans.content.includes(option)
+                      )
+                      .map((ans) => ans.name)
+                      .join(", ") || "No responses"}
+                  </td>
+
+                  {index === 0 && (
+                    <td
+                      rowSpan={optionCounts.length}
+                      className="border border-muted-foreground py-2 px-4"
+                    >
+                      {renderFinalAnnotation(annotation)}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      }
+
+      case "scaler": {
+        const values =
+          annotation.answers?.map((ans) =>
+            ans.content ? parseFloat(ans.content[0]) : NaN
+          ) || [];
+
+        const average =
+          values.length > 0
+            ? (
+                values.reduce((sum, val) => sum + val, 0) / values.length
+              ).toFixed(2)
+            : "N/A";
+
+        return (
+          <table className="w-full border border-muted-foreground">
+            <thead className="bg-secondary text-secondary-foreground">
+              <tr>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Average
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "75%" }}
+                >
+                  Details
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr>
+                <td className="border border-muted-foreground py-2 px-4 text-center">
+                  {average}
                 </td>
-                <td className="py-2 px-4 border border-muted">
-                  {annotation.type === "textbox" && (
-                    <textarea
-                      className="w-full p-2 border border-muted rounded-md bg-card text-card-foreground resize-none"
-                      value={
-                        annotation.answers?.find(
-                          (ans) =>
-                            ans.name ===
-                            (document.cookie
-                              .split("; ")
-                              .find((row) => row.startsWith("username="))
-                              ?.split("=")[1] || "Anonymous")
-                        )?.content?.[0] || ""
-                      }
-                      onChange={(e) => {
-                        const username =
-                          document.cookie
-                            .split("; ")
-                            .find((row) => row.startsWith("username="))
-                            ?.split("=")[1] || "Anonymous";
-
-                        setConversation((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                annotations: prev.annotations?.map((a) =>
-                                  a._id === annotation._id
-                                    ? {
-                                        ...a,
-                                        answers: a.answers
-                                          ? a.answers.some(
-                                              (ans) => ans.name === username
-                                            )
-                                            ? a.answers.map((ans) =>
-                                                ans.name === username
-                                                  ? {
-                                                      ...ans,
-                                                      content: [e.target.value],
-                                                    }
-                                                  : ans
-                                              )
-                                            : [
-                                                ...a.answers,
-                                                {
-                                                  _id: new Date().toISOString(),
-                                                  name: username,
-                                                  timestamp: Date.now(),
-                                                  content: [e.target.value],
-                                                },
-                                              ]
-                                          : [
-                                              {
-                                                _id: new Date().toISOString(),
-                                                name: username,
-                                                timestamp: Date.now(),
-                                                content: [e.target.value],
-                                              },
-                                            ],
-                                      }
-                                    : a
-                                ),
-                              }
-                            : null
-                        );
-                      }}
-                      onBlur={(e) =>
-                        handleSaveAnswer(annotation._id, [e.target.value])
-                      }
-                      rows={3}
-                      wrap="soft"
-                      placeholder="Type your answer here..."
-                    ></textarea>
-                  )}
-
-                  {annotation.type === "multiple choice" && (
-                    <div className="flex flex-col">
-                      {annotation.options?.map((option, index) => (
-                        <label
-                          key={index}
-                          className="flex items-center space-x-2"
-                        >
-                          <input
-                            type="radio"
-                            name={annotation._id}
-                            checked={
-                              annotation.answers?.find(
-                                (ans) =>
-                                  ans.name ===
-                                  (document.cookie
-                                    .split("; ")
-                                    .find((row) => row.startsWith("username="))
-                                    ?.split("=")[1] || "Anonymous")
-                              )?.content?.[0] === option
-                            }
-                            onChange={() => {
-                              const username =
-                                document.cookie
-                                  .split("; ")
-                                  .find((row) => row.startsWith("username="))
-                                  ?.split("=")[1] || "Anonymous";
-
-                              setConversation((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      annotations: prev.annotations?.map((a) =>
-                                        a._id === annotation._id
-                                          ? {
-                                              ...a,
-                                              answers: a.answers
-                                                ? a.answers.some(
-                                                    (ans) =>
-                                                      ans.name === username
-                                                  )
-                                                  ? a.answers.map((ans) =>
-                                                      ans.name === username
-                                                        ? {
-                                                            ...ans,
-                                                            content: [option],
-                                                          }
-                                                        : ans
-                                                    )
-                                                  : [
-                                                      ...a.answers,
-                                                      {
-                                                        _id: new Date().toISOString(),
-                                                        name: username,
-                                                        timestamp: Date.now(),
-                                                        content: [option],
-                                                      },
-                                                    ]
-                                                : [
-                                                    {
-                                                      _id: new Date().toISOString(),
-                                                      name: username,
-                                                      timestamp: Date.now(),
-                                                      content: [option],
-                                                    },
-                                                  ],
-                                            }
-                                          : a
-                                      ),
-                                    }
-                                  : null
-                              );
-                            }}
-                            onBlur={() =>
-                              handleSaveAnswer(annotation._id, [option])
-                            }
-                          />
-                          <span>{option}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-
-                  {annotation.type === "multiple answers" && (
-                    <div className="flex flex-col">
-                      {annotation.options?.map((option, index) => (
-                        <label
-                          key={index}
-                          className="flex items-center space-x-2"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={annotation.answers
-                              ?.find(
-                                (ans) =>
-                                  ans.name ===
-                                  (document.cookie
-                                    .split("; ")
-                                    .find((row) => row.startsWith("username="))
-                                    ?.split("=")[1] || "Anonymous")
-                              )
-                              ?.content?.includes(option)}
-                            onChange={(e) => {
-                              const username =
-                                document.cookie
-                                  .split("; ")
-                                  .find((row) => row.startsWith("username="))
-                                  ?.split("=")[1] || "Anonymous";
-
-                              setConversation((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      annotations: prev.annotations?.map((a) =>
-                                        a._id === annotation._id
-                                          ? {
-                                              ...a,
-                                              answers: a.answers
-                                                ? a.answers.some(
-                                                    (ans) =>
-                                                      ans.name === username
-                                                  )
-                                                  ? a.answers.map((ans) =>
-                                                      ans.name === username
-                                                        ? {
-                                                            ...ans,
-                                                            content: e.target
-                                                              .checked
-                                                              ? [
-                                                                  ...(ans.content ||
-                                                                    []),
-                                                                  option,
-                                                                ]
-                                                              : (
-                                                                  ans.content ||
-                                                                  []
-                                                                ).filter(
-                                                                  (opt) =>
-                                                                    opt !==
-                                                                    option
-                                                                ),
-                                                          }
-                                                        : ans
-                                                    )
-                                                  : [
-                                                      ...a.answers,
-                                                      {
-                                                        _id: new Date().toISOString(),
-                                                        name: username,
-                                                        timestamp: Date.now(),
-                                                        content: e.target
-                                                          .checked
-                                                          ? [option]
-                                                          : [],
-                                                      },
-                                                    ]
-                                                : [
-                                                    {
-                                                      _id: new Date().toISOString(),
-                                                      name: username,
-                                                      timestamp: Date.now(),
-                                                      content: e.target.checked
-                                                        ? [option]
-                                                        : [],
-                                                    },
-                                                  ],
-                                            }
-                                          : a
-                                      ),
-                                    }
-                                  : null
-                              );
-                            }}
-                            onBlur={(e) => {
-                              const updatedContent =
-                                annotation.answers
-                                  ?.find(
-                                    (ans) =>
-                                      ans.name ===
-                                      (document.cookie
-                                        .split("; ")
-                                        .find((row) =>
-                                          row.startsWith("username=")
-                                        )
-                                        ?.split("=")[1] || "Anonymous")
-                                  )
-                                  ?.content?.filter(
-                                    (ansOpt) => ansOpt !== option
-                                  ) || [];
-                              handleSaveAnswer(
-                                annotation._id,
-                                e.target.checked
-                                  ? [...updatedContent, option]
-                                  : updatedContent
-                              );
-                            }}
-                          />
-                          <span>{option}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-
-                  {annotation.type === "scaler" && (
-                    <div className="flex items-center space-x-4">
-                      <input
-                        type="range"
-                        className="w-full accent-primary"
-                        min={annotation.options?.[0] || "1"}
-                        max={annotation.options?.[1] || "10"}
-                        step={annotation.options?.[2] || "1"}
-                        value={
-                          annotation.answers?.find(
-                            (ans) =>
-                              ans.name ===
-                              (document.cookie
-                                .split("; ")
-                                .find((row) => row.startsWith("username="))
-                                ?.split("=")[1] || "Anonymous")
-                          )?.content?.[0] || annotation.options?.[0]
-                        }
-                        onChange={(e) => {
-                          const username =
-                            document.cookie
-                              .split("; ")
-                              .find((row) => row.startsWith("username="))
-                              ?.split("=")[1] || "Anonymous";
-
-                          setConversation((prev) =>
-                            prev
-                              ? {
-                                  ...prev,
-                                  annotations: prev.annotations?.map((a) =>
-                                    a._id === annotation._id
-                                      ? {
-                                          ...a,
-                                          answers: a.answers
-                                            ? a.answers.some(
-                                                (ans) => ans.name === username
-                                              )
-                                              ? a.answers.map((ans) =>
-                                                  ans.name === username
-                                                    ? {
-                                                        ...ans,
-                                                        content: [
-                                                          e.target.value,
-                                                        ],
-                                                      }
-                                                    : ans
-                                                )
-                                              : [
-                                                  ...a.answers,
-                                                  {
-                                                    _id: new Date().toISOString(),
-                                                    name: username,
-                                                    timestamp: Date.now(),
-                                                    content: [e.target.value],
-                                                  },
-                                                ]
-                                            : [
-                                                {
-                                                  _id: new Date().toISOString(),
-                                                  name: username,
-                                                  timestamp: Date.now(),
-                                                  content: [e.target.value],
-                                                },
-                                              ],
-                                        }
-                                      : a
-                                  ),
-                                }
-                              : null
-                          );
-                        }}
-                        onBlur={(e) =>
-                          handleSaveAnswer(annotation._id, [e.target.value])
-                        }
-                      />
-                      <span className="text-foreground font-semibold">
-                        {annotation.answers?.find(
-                          (ans) =>
-                            ans.name ===
-                            (document.cookie
-                              .split("; ")
-                              .find((row) => row.startsWith("username="))
-                              ?.split("=")[1] || "Anonymous")
-                        )?.content?.[0] || annotation.options?.[0]}
-                      </span>
-                    </div>
-                  )}
+                <td className="border border-muted-foreground py-2 px-4">
+                  {annotation.answers
+                    ?.map((ans) =>
+                      ans.content
+                        ? `${ans.name} (${ans.content[0]})`
+                        : `${ans.name} (No content)`
+                    )
+                    .join(", ") || "No responses"}
                 </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold text-foreground">Conversations</h1>
-        {conversation.messages.map((message, index) => (
-          <div
-            key={index}
-            className={`p-4 rounded-lg ${
-              message.role === "user"
-                ? "bg-primary text-primary-foreground ml-auto"
-                : "bg-muted text-muted-foreground mr-auto"
+            </tbody>
+          </table>
+        );
+      }
+
+      case "textbox": {
+        return (
+          <table className="w-full border border-muted">
+            <thead className="bg-secondary text-secondary-foreground">
+              <tr>
+                <th className="border border-muted-foreground py-2 px-4">
+                  Response
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {annotation.answers?.map((ans, index) => (
+                <tr key={index}>
+                  <td className="border border-muted-foreground py-2 px-4">
+                    {ans.content}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      }
+    }
+  };
+
+  const toggleMessageIndex = (index: number) => {
+    setActiveMessageIndices((prev) => ({
+      ...prev,
+      [index]: !prev[index],
+    }));
+  };
+
+  const toggleCommentIndex = (index: number) => {
+    setActiveCommentIndices((prev) => ({
+      ...prev,
+      [index]: !prev[index],
+    }));
+  };
+
+  const handleToggleAll = () => {
+    const newToggleAll = !JSON.parse(
+      localStorage.getItem("toggleAll") || "false"
+    );
+    localStorage.setItem("toggleAll", JSON.stringify(newToggleAll));
+    const newIndices = Object.keys(activeMessageIndices).reduce<{
+      [key: string]: boolean;
+    }>((acc, key) => {
+      acc[key] = newToggleAll;
+      return acc;
+    }, {});
+    setActiveMessageIndices(newIndices);
+    setActiveCommentIndices(newIndices);
+  };
+
+  const toggleConversationLock = async () => {
+    if (!conversation) return;
+    try {
+      const response = await fetch(
+        `/api/conversations/${conversation._id}/lock`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            isLocked: !conversation.lock?.isLocked,
+            name: "admin",
+          }),
+        }
+      );
+      if (!response.ok) {
+        throw new Error("Failed to update conversation lock");
+      }
+      const updatedResponse = await fetch(
+        `/api/conversations/${conversation._id}`
+      );
+      if (!updatedResponse.ok) {
+        throw new Error("Failed to refresh conversation");
+      }
+      setConversation(await updatedResponse.json());
+    } catch (error) {
+      console.error("Error updating conversation lock:", error);
+    }
+  };
+
+  return (
+    <div className="p-4 bg-background text-foreground h-screen flex flex-col">
+      <button
+        onClick={handleToggleAll}
+        className="p-2 bg-blue-500 text-white rounded"
+      >
+        {JSON.parse(localStorage.getItem("toggleAll") || "false")
+          ? "Close All Annotations and Comments"
+          : "Open All Annotations and Comments"}
+      </button>
+
+      <button
+        onClick={toggleConversationLock}
+        className={`inline-flex items-center justify-center gap-2
+          px-4 py-2 mt-3 rounded-md border
+          text-sm font-medium
+          transition-all duration-200
+          hover:shadow-md active:scale-[0.98]
+          ${
+            conversation.lock?.isLocked
+              ? "bg-green-600/10 border-green-500/50 text-green-400 hover:bg-green-600/20"
+              : "bg-red-600/10 border-red-500/50 text-red-400 hover:bg-red-600/20"
+          }`}
+      >
+        {conversation.lock?.isLocked ? (
+          <>
+            <span>🔓</span>
+            Unlock Conversation
+          </>
+        ) : (
+          <>
+            <span>🔒</span>
+            Lock Conversation
+          </>
+        )}
+      </button>
+
+      <h1 className="text-2xl font-bold mb-4">
+        Summary of Annotations Conversation Level
+      </h1>
+
+      {conversation.annotationStats && (
+        <div className="mb-4">
+          <table className="w-full border border-muted-foreground">
+            <thead className="bg-secondary text-secondary-foreground">
+              <tr>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "25%" }}
+                >
+                  Annotation Status
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4 text-center"
+                  style={{ width: "25%" }}
+                >
+                  Count
+                </th>
+                <th
+                  className="border border-muted-foreground py-2 px-4"
+                  style={{ width: "50%" }}
+                >
+                  Annotators
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr>
+                <td className="border border-muted-foreground py-2 px-4">
+                  Not Annotated
+                </td>
+                <td className="border border-muted-foreground py-2 px-4 text-center">
+                  {conversation.annotationStats.notAnnotated}
+                </td>
+                <td className="border border-muted-foreground py-2 px-4">
+                  {conversation.annotationStats.notAnnotatedUsers.length > 0
+                    ? conversation.annotationStats.notAnnotatedUsers.join(", ")
+                    : "None"}
+                </td>
+              </tr>
+
+              <tr>
+                <td className="border border-muted-foreground py-2 px-4">
+                  In Progress
+                </td>
+                <td className="border border-muted-foreground py-2 px-4 text-center">
+                  {conversation.annotationStats.inProgress}
+                </td>
+                <td className="border border-muted-foreground py-2 px-4">
+                  {conversation.annotationStats.inProgressUsers.length > 0
+                    ? conversation.annotationStats.inProgressUsers.join(", ")
+                    : "None"}
+                </td>
+              </tr>
+
+              <tr>
+                <td className="border border-muted-foreground py-2 px-4">
+                  Annotated
+                </td>
+                <td className="border border-muted-foreground py-2 px-4 text-center">
+                  {conversation.annotationStats.annotated}
+                </td>
+                <td className="border border-muted-foreground py-2 px-4">
+                  {conversation.annotationStats.annotatedUsers.length > 0
+                    ? conversation.annotationStats.annotatedUsers.join(", ")
+                    : "None"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {conversation.annotations?.map((annotation, index) => (
+        <div key={index} className="mb-4">
+          <h2 className="text-lg font-semibold">{annotation.title}</h2>
+          {renderSummary(annotation)}
+        </div>
+      ))}
+
+      <h1 className="text-2xl font-bold mb-4">
+        Summary of Annotations Message Level
+      </h1>
+
+      {conversation.messages.map((message, index) => (
+        <div
+          key={index}
+          className={`p-4 rounded-lg w-full mb-3 ${
+            message.role === "user"
+              ? "bg-primary text-primary-foreground ml-auto"
+              : "bg-muted text-muted-foreground mr-auto"
+          }`}
+        >
+          <p
+            className={`font-semibold ${
+              message.role === "user" ? "text-muted" : "text-muted-foreground"
             }`}
           >
-            <p
-              className={`font-semibold ${
-                message.role === "user" ? "text-muted" : "text-muted-foreground"
-              }`}
-            >
-              {message.role === "user" ? "You" : "AI"}
-            </p>
-            <p className="mt-2 leading-relaxed">{message.content}</p>
-            <button
-              className="bg-yellow-200 rounded-md p-2 text-black mt-2 hover:bg-yellow-300 ease-in-out transition duration-300"
-              onClick={() => {
-                setActiveMessageIndex(
-                  activeMessageIndex === index ? null : index
-                );
-                setMessageAnnotation(message.annotations || []);
-              }}
-            >
-              {activeMessageIndex === index
-                ? "Hide Annotations"
-                : "Show Annotations"}
-            </button>
-            {activeMessageIndex === index && (
-              <table className="w-full mt-2 border border-muted shadow-sm mb-3 text-foreground">
-                <thead className="bg-secondary text-secondary-foreground">
-                  <tr>
-                    <th
-                      className="border py-2 px-4 text-left"
-                      style={{ width: "30%" }}
-                    >
-                      Title
-                    </th>
-                    <th
-                      className="border py-2 px-4 text-left"
-                      style={{ width: "60%" }}
-                    >
-                      Answer
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {messageAnnotation.map((annotation) => (
-                    <tr key={annotation._id} className="even:bg-secondary">
-                      <td className="py-2 px-4 border border-muted">
-                        {annotation.title}
-                      </td>
-                      <td className="py-2 px-4 border border-muted">
-                        {annotation.type === "textbox" && (
-                          <textarea
-                            className="w-full p-2 border border-muted rounded-md bg-card text-card-foreground resize-none"
-                            value={
-                              annotation.answers?.find(
-                                (ans) =>
-                                  ans.name ===
-                                  (document.cookie
-                                    .split("; ")
-                                    .find((row) => row.startsWith("username="))
-                                    ?.split("=")[1] || "Anonymous")
-                              )?.content?.[0] || ""
-                            }
-                            onChange={(e) => {
-                              const username =
-                                document.cookie
-                                  .split("; ")
-                                  .find((row) => row.startsWith("username="))
-                                  ?.split("=")[1] || "Anonymous";
+            {message.role === "user" ? "You" : "AI"}
+          </p>
 
-                              setMessageAnnotation((prev) =>
-                                prev.map((a) =>
-                                  a._id === annotation._id
-                                    ? {
-                                        ...a,
-                                        answers: a.answers
-                                          ? a.answers.some(
-                                              (ans) => ans.name === username
-                                            )
-                                            ? a.answers.map((ans) =>
-                                                ans.name === username
-                                                  ? {
-                                                      ...ans,
-                                                      content: [e.target.value],
-                                                    }
-                                                  : ans
-                                              )
-                                            : [
-                                                ...a.answers,
-                                                {
-                                                  _id: new Date().toISOString(),
-                                                  name: username,
-                                                  timestamp: Date.now(),
-                                                  content: [e.target.value],
-                                                },
-                                              ]
-                                          : [
-                                              {
-                                                _id: new Date().toISOString(),
-                                                name: username,
-                                                timestamp: Date.now(),
-                                                content: [e.target.value],
-                                              },
-                                            ],
-                                      }
-                                    : a
-                                )
-                              );
-                            }}
-                            onBlur={(e) =>
-                              handleSaveMessageAnnotation(annotation._id, [
-                                e.target.value,
-                              ])
-                            }
-                            rows={3}
-                            wrap="soft"
-                            placeholder="Type your answer here..."
-                          ></textarea>
-                        )}
+          <p className="mt-2 leading-relaxed">{message.content}</p>
 
-                        {annotation.type === "multiple choice" && (
-                          <div className="flex flex-col">
-                            {annotation.options?.map((option, idx) => (
-                              <label
-                                key={idx}
-                                className="flex items-center space-x-2"
-                              >
-                                <input
-                                  type="radio"
-                                  name={annotation._id}
-                                  checked={
-                                    annotation.answers?.find(
-                                      (ans) =>
-                                        ans.name ===
-                                        (document.cookie
-                                          .split("; ")
-                                          .find((row) =>
-                                            row.startsWith("username=")
-                                          )
-                                          ?.split("=")[1] || "Anonymous")
-                                    )?.content?.[0] === option
-                                  }
-                                  onChange={() => {
-                                    const username =
-                                      document.cookie
-                                        .split("; ")
-                                        .find((row) =>
-                                          row.startsWith("username=")
-                                        )
-                                        ?.split("=")[1] || "Anonymous";
+          <button
+            className="bg-yellow-200 rounded-md p-2 text-black mt-2 hover:bg-yellow-300 ease-in-out transition duration-300 mr-2"
+            onClick={() => {
+              toggleMessageIndex(index);
+            }}
+          >
+            {activeMessageIndices[index]
+              ? "Hide Annotations"
+              : "Show Annotations"}
+          </button>
 
-                                    setMessageAnnotation((prev) =>
-                                      prev.map((a) =>
-                                        a._id === annotation._id
-                                          ? {
-                                              ...a,
-                                              answers: a.answers
-                                                ? a.answers.some(
-                                                    (ans) =>
-                                                      ans.name === username
-                                                  )
-                                                  ? a.answers.map((ans) =>
-                                                      ans.name === username
-                                                        ? {
-                                                            ...ans,
-                                                            content: [option],
-                                                          }
-                                                        : ans
-                                                    )
-                                                  : [
-                                                      ...a.answers,
-                                                      {
-                                                        _id: new Date().toISOString(),
-                                                        name: username,
-                                                        timestamp: Date.now(),
-                                                        content: [option],
-                                                      },
-                                                    ]
-                                                : [
-                                                    {
-                                                      _id: new Date().toISOString(),
-                                                      name: username,
-                                                      timestamp: Date.now(),
-                                                      content: [option],
-                                                    },
-                                                  ],
-                                            }
-                                          : a
-                                      )
-                                    );
-                                  }}
-                                  onBlur={() =>
-                                    handleSaveMessageAnnotation(
-                                      annotation._id,
-                                      [option]
-                                    )
-                                  }
-                                />
-                                <span>{option}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
+          <button
+            className={`bg-yellow-200 rounded-md p-2 text-black mt-2 hover:bg-yellow-300 ease-in-out transition duration-300 ${
+              hasComments[index] ? "glow-button text-red-600" : ""
+            }`}
+            onClick={() => {
+              toggleCommentIndex(index);
+            }}
+          >
+            {activeCommentIndices[index] ? "Hide Comments" : "Show Comments"}
+          </button>
 
-                        {annotation.type === "multiple answers" && (
-                          <div className="flex flex-col">
-                            {annotation.options?.map((option, idx) => (
-                              <label
-                                key={idx}
-                                className="flex items-center space-x-2"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={
-                                    annotation.answers
-                                      ?.find(
-                                        (ans) =>
-                                          ans.name ===
-                                          (document.cookie
-                                            .split("; ")
-                                            .find((row) =>
-                                              row.startsWith("username=")
-                                            )
-                                            ?.split("=")[1] || "Anonymous")
-                                      )
-                                      ?.content?.includes(option) || false
-                                  }
-                                  onChange={(e) => {
-                                    const username =
-                                      document.cookie
-                                        .split("; ")
-                                        .find((row) =>
-                                          row.startsWith("username=")
-                                        )
-                                        ?.split("=")[1] || "Anonymous";
-
-                                    setMessageAnnotation((prev) =>
-                                      prev.map((a) =>
-                                        a._id === annotation._id
-                                          ? {
-                                              ...a,
-                                              answers: a.answers
-                                                ? a.answers.some(
-                                                    (ans) =>
-                                                      ans.name === username
-                                                  )
-                                                  ? a.answers.map((ans) =>
-                                                      ans.name === username
-                                                        ? {
-                                                            ...ans,
-                                                            content: e.target
-                                                              .checked
-                                                              ? ans.content?.includes(
-                                                                  option
-                                                                )
-                                                                ? ans.content
-                                                                : [
-                                                                    ...(ans.content ||
-                                                                      []),
-                                                                    option,
-                                                                  ]
-                                                              : (
-                                                                  ans.content ||
-                                                                  []
-                                                                ).filter(
-                                                                  (ansOpt) =>
-                                                                    ansOpt !==
-                                                                    option
-                                                                ),
-                                                          }
-                                                        : ans
-                                                    )
-                                                  : [
-                                                      ...a.answers,
-                                                      {
-                                                        _id: new Date().toISOString(),
-                                                        name: username,
-                                                        timestamp: Date.now(),
-                                                        content: e.target
-                                                          .checked
-                                                          ? [option]
-                                                          : [],
-                                                      },
-                                                    ]
-                                                : [
-                                                    {
-                                                      _id: new Date().toISOString(),
-                                                      name: username,
-                                                      timestamp: Date.now(),
-                                                      content: e.target.checked
-                                                        ? [option]
-                                                        : [],
-                                                    },
-                                                  ],
-                                            }
-                                          : a
-                                      )
-                                    );
-                                  }}
-                                  onBlur={(e) => {
-                                    const updatedContent = e.target.checked
-                                      ? [
-                                          ...(annotation.answers?.find(
-                                            (ans) =>
-                                              ans.name ===
-                                              (document.cookie
-                                                .split("; ")
-                                                .find((row) =>
-                                                  row.startsWith("username=")
-                                                )
-                                                ?.split("=")[1] || "Anonymous")
-                                          )?.content || []),
-                                          option,
-                                        ]
-                                      : (
-                                          annotation.answers?.find(
-                                            (ans) =>
-                                              ans.name ===
-                                              (document.cookie
-                                                .split("; ")
-                                                .find((row) =>
-                                                  row.startsWith("username=")
-                                                )
-                                                ?.split("=")[1] || "Anonymous")
-                                          )?.content || []
-                                        ).filter((ansOpt) => ansOpt !== option);
-
-                                    handleSaveMessageAnnotation(
-                                      annotation._id,
-                                      updatedContent
-                                    );
-                                  }}
-                                />
-                                <span>{option}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-
-                        {annotation.type === "scaler" && (
-                          <div className="flex items-center space-x-4">
-                            <input
-                              type="range"
-                              className="w-full accent-primary"
-                              min={annotation.options?.[0] || "1"}
-                              max={annotation.options?.[1] || "10"}
-                              step={annotation.options?.[2] || "1"}
-                              value={
-                                annotation.answers?.find(
-                                  (ans) =>
-                                    ans.name ===
-                                    (document.cookie
-                                      .split("; ")
-                                      .find((row) =>
-                                        row.startsWith("username=")
-                                      )
-                                      ?.split("=")[1] || "Anonymous")
-                                )?.content?.[0] || annotation.options?.[0]
-                              }
-                              onChange={(e) => {
-                                const username =
-                                  document.cookie
-                                    .split("; ")
-                                    .find((row) => row.startsWith("username="))
-                                    ?.split("=")[1] || "Anonymous";
-
-                                setMessageAnnotation((prev) =>
-                                  prev.map((a) =>
-                                    a._id === annotation._id
-                                      ? {
-                                          ...a,
-                                          answers: a.answers
-                                            ? a.answers.some(
-                                                (ans) => ans.name === username
-                                              )
-                                              ? a.answers.map((ans) =>
-                                                  ans.name === username
-                                                    ? {
-                                                        ...ans,
-                                                        content: [
-                                                          e.target.value,
-                                                        ],
-                                                      }
-                                                    : ans
-                                                )
-                                              : [
-                                                  ...a.answers,
-                                                  {
-                                                    _id: new Date().toISOString(),
-                                                    name: username,
-                                                    timestamp: Date.now(),
-                                                    content: [e.target.value],
-                                                  },
-                                                ]
-                                            : [
-                                                {
-                                                  _id: new Date().toISOString(),
-                                                  name: username,
-                                                  timestamp: Date.now(),
-                                                  content: [e.target.value],
-                                                },
-                                              ],
-                                        }
-                                      : a
-                                  )
-                                );
-                              }}
-                              onBlur={(e) =>
-                                handleSaveMessageAnnotation(annotation._id, [
-                                  e.target.value,
-                                ])
-                              }
-                            />
-                            <span className="text-foreground font-semibold">
-                              {annotation.answers?.find(
-                                (ans) =>
-                                  ans.name ===
-                                  (document.cookie
-                                    .split("; ")
-                                    .find((row) => row.startsWith("username="))
-                                    ?.split("=")[1] || "Anonymous")
-                              )?.content?.[0] || annotation.options?.[0]}
-                            </span>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          {activeMessageIndices[index] && (
             <div className="mt-2">
-              <h2 className="text-lg font-semibold text-foreground">
-                Comments
-              </h2>
-              <h4>Refresh after each comments addition</h4>
-              {message.comments
-                ?.filter((comment) => {
-                  const cookieValue = document.cookie
-                    .split("; ")
-                    .find((row) => row.startsWith("username="))
-                    ?.split("=")[1];
-                  const username = cookieValue
-                    ? decodeURIComponent(cookieValue)
-                    : "Anonymous";
-                  return comment.name === username;
-                })
-                .map((comment) => (
-                  <div
-                    key={comment._id}
-                    className="flex justify-between items-center p-4 bg-gray-100 dark:bg-gray-800 rounded-lg shadow-md mb-4"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                        {comment.name}
-                      </p>
-                      <p className="mt-1 text-gray-800 dark:text-gray-300">
-                        {comment.content}
-                      </p>
-                    </div>
-                    <button
-                      className="text-red-500 hover:text-red-600 transition duration-300 font-medium"
-                      onClick={() => handleDeleteComment(index, comment._id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-
-              <div className="flex items-center mt-4">
-                <input
-                  type="text"
-                  className="w-full p-2 border border-muted rounded-l-md bg-card text-card-foreground focus:outline-none"
-                  value={localCommentContent[index] || ""}
-                  onChange={(e) =>
-                    setLocalCommentContent((prev) => ({
-                      ...prev,
-                      [index]: e.target.value,
-                    }))
-                  }
-                  placeholder="Type your comment here..."
-                />
-                <button
-                  className="bg-blue-500 text-primary-foreground p-2 rounded-r-md hover:bg-primary-dark transition duration-300"
-                  onClick={() => {
-                    handleAddComment(index, localCommentContent[index] || "");
-                    setLocalCommentContent((prev) => ({
-                      ...prev,
-                      [index]: "",
-                    }));
-                  }}
-                >
-                  Add
-                </button>
-              </div>
+              {message.annotations?.map((annotation, index) => (
+                <div key={index} className="mt-2">
+                  <h3 className="text-lg font-semibold">{annotation.title}</h3>
+                  {renderSummary(annotation)}
+                </div>
+              ))}
             </div>
-          </div>
-        ))}
-      </div>
+          )}
+
+          {activeCommentIndices[index] && (
+            <div className="mt-4 space-y-4">
+              {message.comments?.map((comment, idx) => (
+                <div
+                  key={idx}
+                  className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg shadow-md"
+                >
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      {comment.name}
+                    </h3>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                      {new Date(comment.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <p className="mt-2 text-gray-800 dark:text-gray-200 leading-relaxed">
+                    {comment.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

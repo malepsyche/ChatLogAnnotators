@@ -1,279 +1,236 @@
-// this API is for fetching each conversation and the patch is for annotating the conversation.
-
 import { NextResponse } from "next/server";
-import { getCollection, getUserCollection } from "@/lib/cosmosdb";
 import { ObjectId } from "mongodb";
+import { getCollection, getUserCollection, getAssignmentCollection } from "@/lib/cosmosdb";
+import { getAnnotationLockStatus, getRequestUser } from "@/lib/annotationLock";
 
-export async function GET(req: Request, context: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) {
+type Context = { params: Promise<{ id: string }> };
+type RecordValue = Record<string, unknown>;
+
+function validAnswer(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function latestUserAnswers(answers: unknown[], usernames: string[]) {
+  const latest = new Map<string, RecordValue>();
+  for (const raw of answers) {
+    if (!raw || typeof raw !== "object") continue;
+    const answer = raw as RecordValue;
+    if (typeof answer.name !== "string" || !usernames.includes(answer.name)) continue;
+    const previous = latest.get(answer.name);
+    if (!previous || Number(answer.timestamp || 0) >= Number(previous.timestamp || 0)) {
+      latest.set(answer.name, answer);
+    }
+  }
+  return latest;
+}
+
+export async function GET(_req: Request, context: Context) {
   try {
-    const params = await context.params;
-    const { id } = params;
+    const { id } = await context.params;
+    if (!ObjectId.isValid(id)) return NextResponse.json({ error: "Invalid conversation ID" }, { status: 400 });
 
     const collection = await getCollection();
-    const userCollection = await getUserCollection();
     const conversation = await collection.findOne({ _id: new ObjectId(id) });
+    if (!conversation) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
 
-    if (!conversation) {
-      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
-    }
+    const requestUser = await getRequestUser();
+    if (!requestUser) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
 
-    const users = await userCollection
-      .find({
-        role: "annotator",
-        isDeleted: false,
-      })
-      .toArray();
+    const users = await (await getUserCollection())
+      .find({ role: "annotator", isDeleted: false }).toArray();
+
+    const assignmentDocs = await (await getAssignmentCollection())
+      .find({ conversations: id }).toArray();
+    const assignmentUsernames = new Set(
+      assignmentDocs.flatMap((assignment) => Array.isArray(assignment.annotators) ? assignment.annotators : [])
+    );
 
     const assignedUsers = users.filter((user) => {
-      if (!user.assignedConversations) {
-        return false;
-      }
-
-      return Object.values(user.assignedConversations).some(
-        (database: any) =>
-          database.assignments?.some((assignment: any) =>
-            assignment.conversations?.includes(id)
-          )
-      );
+      if (assignmentUsernames.has(user.username)) return true;
+      // Legacy assignment membership remains supported until migrated.
+      return Object.values(user.assignedConversations ?? {}).some((database) => {
+        const value = database as { assignments?: { conversations?: string[] }[] };
+        return value.assignments?.some((assignment) => assignment.conversations?.includes(id));
+      });
     });
 
     const allAnnotations = [
       ...(conversation.annotations ?? []),
-      ...(conversation.messages ?? []).flatMap(
-        (message: any) => message.annotations ?? []
+      ...(conversation.messages ?? []).flatMap((message: RecordValue) =>
+        Array.isArray(message.annotations) ? message.annotations : []
       ),
     ];
 
-    let annotated = 0;
-    let inProgress = 0;
-    let notAnnotated = 0;
+    const annotationStats = {
+      annotated: 0, inProgress: 0, notAnnotated: 0,
+      totalAssigned: assignedUsers.length,
+      annotatedUsers: [] as string[],
+      inProgressUsers: [] as string[],
+      notAnnotatedUsers: [] as string[],
+    };
 
-    const annotatedUsers: string[] = [];
-    const inProgressUsers: string[] = [];
-    const notAnnotatedUsers: string[] = [];
-    
     for (const user of assignedUsers) {
-      const answeredCount = allAnnotations.filter(
-        (annotation: any) =>
-          annotation.answers?.some(
-            (answer: any) =>
-              typeof answer === "object" &&
-              answer !== null &&
-              answer.name === user.username
-          )
+      const answeredCount = allAnnotations.filter((annotation: RecordValue) =>
+        Array.isArray(annotation.answers) &&
+        annotation.answers.some((answer: RecordValue) =>
+          answer && typeof answer === "object" && answer.name === user.username &&
+          Array.isArray(answer.content)
+        )
       ).length;
 
       if (answeredCount === 0) {
-        notAnnotated++;
-        notAnnotatedUsers.push(user.username);
-      } else if (
-        allAnnotations.length > 0 &&
-        answeredCount === allAnnotations.length
-      ) {
-        annotated++;
-        annotatedUsers.push(user.username);
+        annotationStats.notAnnotated++;
+        annotationStats.notAnnotatedUsers.push(user.username);
+      } else if (answeredCount === allAnnotations.length) {
+        annotationStats.annotated++;
+        annotationStats.annotatedUsers.push(user.username);
       } else {
-        inProgress++;
-        inProgressUsers.push(user.username);
+        annotationStats.inProgress++;
+        annotationStats.inProgressUsers.push(user.username);
       }
     }
 
-    const annotationStats = {
-      annotated,
-      inProgress,
-      notAnnotated,
-      totalAssigned: assignedUsers.length,
+    const usernames = assignedUsers.map((user) => user.username);
+    const annotations = (conversation.annotations ?? []).map((annotation: RecordValue) => {
+      const adminResolution = annotation.adminResolution as { content: string[] } | undefined;
+      if (adminResolution) return {
+        ...annotation, resolutionStatus: "admin-resolved",
+        effectiveFinalAnnotation: adminResolution.content,
+      };
 
-      annotatedUsers,
-      inProgressUsers,
-      notAnnotatedUsers,
+      const latest = latestUserAnswers(
+        Array.isArray(annotation.answers) ? annotation.answers : [], usernames
+      );
+      if (usernames.length === 0 || latest.size !== usernames.length) {
+        return { ...annotation, resolutionStatus: "pending", effectiveFinalAnnotation: null };
+      }
+
+      const answers = [...latest.values()];
+      const normalize = (value: unknown) =>
+        Array.isArray(value) ? [...value].filter((v): v is string => typeof v === "string").sort() : [];
+      const first = normalize(answers[0].content);
+      const consensus = answers.every((answer) => {
+        const current = normalize(answer.content);
+        return current.length === first.length &&
+          current.every((value, index) => value === first[index]);
+      });
+      return {
+        ...annotation,
+        resolutionStatus: consensus ? "consensus" : "disagreement",
+        effectiveFinalAnnotation: consensus ? first : null,
+      };
+    });
+
+    let effectiveLock = {
+      conversationLocked: conversation.lock?.isLocked === true,
+      assignmentLocked: false,
+      isLocked: conversation.lock?.isLocked === true,
     };
 
-    // Calculate final annotation status for each conversation-level annotation
-    const assignedUsernames = assignedUsers.map((user) => user.username);
-
-    const annotationsWithResolution = (conversation.annotations ?? []).map(
-      (annotation: any) => {
-        // If an admin has manually resolved the annotation,
-        // the persisted admin resolution becomes the final annotation.
-        if (annotation.adminResolution) {
-          return {
-            ...annotation,
-            resolutionStatus: "admin-resolved",
-            effectiveFinalAnnotation: annotation.adminResolution.content,
-          };
-        }
-
-        // Only use answers from annotators assigned to this conversation.
-        const annotatorAnswers = (annotation.answers ?? []).filter(
-          (answer: any) =>
-            typeof answer === "object" &&
-            answer !== null &&
-            assignedUsernames.includes(answer.name)
-        );
-
-        // No assigned annotators means there cannot be a consensus yet.
-        if (assignedUsers.length === 0) {
-          return {
-            ...annotation,
-            resolutionStatus: "pending",
-            effectiveFinalAnnotation: null,
-          };
-        }
-
-        // Check whether every assigned annotator has answered.
-        const answeredUsers = new Set(
-          annotatorAnswers.map((answer: any) => answer.name)
-        );
-
-        if (answeredUsers.size < assignedUsers.length) {
-          return {
-            ...annotation,
-            resolutionStatus: "pending",
-            effectiveFinalAnnotation: null,
-          };
-        }
-
-        // Normalise the answers so multiple-answer selections
-        // are considered equal regardless of order.
-        const normaliseContent = (content: string[] | null | undefined) =>
-          [...(content ?? [])].sort();
-
-        const firstAnswer = normaliseContent(
-          annotatorAnswers[0]?.content
-        );
-
-        const everyoneAgrees = annotatorAnswers.every((answer: any) => {
-          const currentAnswer = normaliseContent(answer.content);
-
-          return (
-            currentAnswer.length === firstAnswer.length &&
-            currentAnswer.every(
-              (value: string, index: number) =>
-                value === firstAnswer[index]
-            )
-          );
-        });
-
-        if (everyoneAgrees) {
-          return {
-            ...annotation,
-            resolutionStatus: "consensus",
-            effectiveFinalAnnotation: firstAnswer,
-          };
-        }
-
-        return {
-          ...annotation,
-          resolutionStatus: "disagreement",
-          effectiveFinalAnnotation: null,
-        };
+    if (requestUser.role === "annotator") {
+      if (!requestUser.activeDatabaseId) {
+        return NextResponse.json({ error: "Active database not found" }, { status: 400 });
       }
-    );
+      effectiveLock = await getAnnotationLockStatus(
+        id, requestUser.activeDatabaseId, requestUser.username, requestUser.activeAssignment
+      );
+    }
 
-    return NextResponse.json({
-      ...conversation,
-      annotations: annotationsWithResolution,
-      annotationStats,
-    });
+    return NextResponse.json({ ...conversation, annotations, annotationStats, effectiveLock });
   } catch (error) {
     console.error("Error fetching conversation:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
 
-// Annotator response update
-export async function PATCH(req: Request) {
+export async function PATCH(req: Request, context: Context) {
   try {
-    const {
-      id,
-      annotationId,
-      updatedAnswer,
-      name,
-      action = "annotate",
-    } = await req.json();
+    const { id } = await context.params;
+    const body = await req.json();
+    const { annotationId, updatedAnswer, action = "annotate" } = body;
 
-    if (!id || !annotationId || !updatedAnswer || !name) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    if (!ObjectId.isValid(id) || !ObjectId.isValid(annotationId) ||
+        !validAnswer(updatedAnswer) || !["annotate", "resolve"].includes(action)) {
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    }
+    if (body.id && body.id !== id) {
+      return NextResponse.json({ error: "Conversation ID mismatch" }, { status: 400 });
     }
 
-    if (!ObjectId.isValid(id) || !ObjectId.isValid(annotationId)) {
-      return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+    const user = await getRequestUser();
+    if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    if (action === "resolve" && user.role !== "admin") {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+    if (action === "annotate" && !["admin", "annotator"].includes(user.role)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     const collection = await getCollection();
     const conversation = await collection.findOne({ _id: new ObjectId(id) });
+    if (!conversation) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
 
-    if (!conversation) {
-      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    if (action === "annotate" && user.role === "annotator") {
+      if (!user.activeDatabaseId) {
+        return NextResponse.json({ error: "Active database not found" }, { status: 400 });
+      }
+      const lock = await getAnnotationLockStatus(
+        id, user.activeDatabaseId, user.username, user.activeAssignment
+      );
+      if (lock.isLocked) return NextResponse.json({ error: "Annotations are locked" }, { status: 403 });
     }
 
-    // Find the annotation by ID
-    const annotationIndex = conversation.annotations.findIndex(
-      (annotation: any) => annotation._id.equals(new ObjectId(annotationId)) // eslint-disable-line @typescript-eslint/no-explicit-any
+    const index = (conversation.annotations ?? []).findIndex(
+      (annotation: RecordValue) => String(annotation._id) === annotationId
     );
+    if (index === -1) return NextResponse.json({ error: "Annotation not found" }, { status: 404 });
 
-    if (annotationIndex === -1) {
-      return NextResponse.json({ error: "Annotation not found" }, { status: 404 });
-    }
+    const content = [...new Set(updatedAnswer)];
+    const annotation = conversation.annotations[index] as RecordValue;
+    const answers = Array.isArray(annotation.answers) ? annotation.answers : [];
 
-    // Admin resolution update
+    const filter: RecordValue = {
+      _id: new ObjectId(id),
+      [`annotations.${index}._id`]: new ObjectId(annotationId),
+    };
+    if (user.role === "annotator") filter["lock.isLocked"] = { $ne: true };
+
+    let result;
     if (action === "resolve") {
-      const adminResolution = {
-        content: Array.from(new Set(updatedAnswer)),
-        name,
-        timestamp: Date.now(),
-      };
-
-      await collection.updateOne(
-        { _id: new ObjectId(id) },
-        {
-          $set: {
-            [`annotations.${annotationIndex}.adminResolution`]: adminResolution,
-          },
-        }
-      );
-
-      return NextResponse.json({
-        message: "Annotation resolved successfully",
+      result = await collection.updateOne(filter, {
+        $set: { [`annotations.${index}.adminResolution`]: {
+          content, name: user.username, timestamp: Date.now(),
+        } },
       });
-    }
-
-    const annotation = conversation.annotations[annotationIndex];
-
-    // Ensure the answers array exists
-    if (!Array.isArray(annotation.answers)) {
-      annotation.answers = [];
-    }
-
-    // Check if an answer from the user already exists
-    const existingAnswerIndex = annotation.answers.findIndex(
-      (answer: any) => answer.name === name // eslint-disable-line @typescript-eslint/no-explicit-any
-    );
-
-    if (existingAnswerIndex !== -1) {
-      // Update the existing answer
-      const updatePath = `annotations.${annotationIndex}.answers.${existingAnswerIndex}.content`;
-      await collection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { [updatePath]: Array.from(new Set(updatedAnswer)) } } // Use Set to avoid duplicate answers
-      );
     } else {
-      // Add a new answer
-      const newAnswer = {
-        _id: new ObjectId(),
-        name,
-        timestamp: Date.now(),
-        content: Array.from(new Set(updatedAnswer)), // Avoid duplicate answers
-      };
-
-      await collection.updateOne(
-        { _id: new ObjectId(id) },
-        { $push: { [`annotations.${annotationIndex}.answers`]: newAnswer } as any } // eslint-disable-line @typescript-eslint/no-explicit-any 
+      const existing = answers.findIndex((answer: RecordValue) =>
+        answer && typeof answer === "object" && answer.name === user.username
       );
+      if (existing !== -1) {
+        result = await collection.updateOne(filter, {
+          $set: {
+            [`annotations.${index}.answers.${existing}.content`]: content,
+            [`annotations.${index}.answers.${existing}.timestamp`]: Date.now(),
+          },
+        });
+      } else {
+        result = await collection.updateOne(filter, {
+          $push: { [`annotations.${index}.answers`]: {
+            _id: new ObjectId(), name: user.username,
+            timestamp: Date.now(), content,
+          } } as any,
+        });
+      }
     }
 
-    return NextResponse.json({ message: "Annotation updated successfully" });
+    if (!result.matchedCount) {
+      return NextResponse.json(
+        { error: "Conversation locked or annotation changed; refresh and retry" },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ message: action === "resolve" ?
+      "Annotation resolved successfully" : "Annotation updated successfully" });
   } catch (error) {
     console.error("Error updating annotation:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

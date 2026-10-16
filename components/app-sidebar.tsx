@@ -50,11 +50,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             icon: SquareTerminal,
             isActive: true,
           },
-          {
-            title: "Annotation Overviews",
-            url: "/admin/overviews",
-            icon: List,
-          },
           { title: "Teams", url: "/admin/teams", icon: Users },
           { title: "Admin", url: "/admin/admin", icon: Settings2 },
           { title: "Analytics", url: "/admin/analytics", icon: PieChart },

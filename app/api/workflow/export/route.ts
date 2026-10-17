@@ -19,9 +19,9 @@ export async function GET(req: Request) {
             );
         }
 
-        if (!databaseId || databaseId === "undefined") {
+        if (!databaseId || !ObjectId.isValid(databaseId)) {
             return NextResponse.json(
-                { error: "Database ID is required" },
+                { error: "Invalid database ID" },
                 { status: 400 }
             );
         }
@@ -40,20 +40,34 @@ export async function GET(req: Request) {
             );
         }
 
+        if (user.role !== "admin" && user.role !== "annotator") {
+            return NextResponse.json(
+                { error: "Forbidden" },
+                { status: 403 }
+            );
+        }
+
         if (user.role === "annotator") {
             const assignments = await (await getAssignmentCollection())
                 .find({
                     databaseId,
-                    annotators: user.username,
-                    conversations: { $in: selectedIds }
+                    annotators: user.username
                 })
                 .toArray();
 
             const allowedIds = new Set(
-                assignments.flatMap((assignment) => assignment.conversations || [])
+                assignments.flatMap((assignment) =>
+                    (assignment.conversations || []).map((id: string | ObjectId) =>
+                        String(id)
+                    )
+                )
             );
 
-            if (selectedIds.some((id) => !allowedIds.has(id))) {
+            const unauthorized = selectedIds.some(
+                (id) => !allowedIds.has(id)
+            );
+
+            if (unauthorized) {
                 return NextResponse.json(
                     { error: "Access denied to one or more conversations" },
                     { status: 403 }
@@ -89,9 +103,11 @@ export async function GET(req: Request) {
             }
         );
     } catch (error) {
+        console.error("[Export API]", error);
+
         return NextResponse.json(
-            { error: String(error) },
-            { status: 403 }
+            { error: "Failed to export conversations" },
+            { status: 500 }
         );
     }
 }

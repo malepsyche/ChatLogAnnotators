@@ -26,18 +26,46 @@ export default function ExportPage() {
     }, [activeDatabase]);
     const visible = useMemo(() => items.filter((item) => `${item.title} ${item.person}`.toLowerCase().includes(query.toLowerCase())), [items, query]);
     const toggle = (id: string) => setSelected((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
-    const download = () => {
+    const download = async () => {
         if (!activeDatabase || selected.length === 0) {
             return;
         }
-        const params = new URLSearchParams({
-            format: "json",
-            databaseId: activeDatabase.name
-        });
-        selected.forEach((id) => {
-            params.append("conversationId", id);
-        });
-        window.location.href = `/api/workflow/export?${params.toString()}`;
+
+        try {
+            setError("");
+
+            const response = await fetch("/api/admin/databases");
+
+            if (!response.ok) {
+                throw new Error("Failed to retrieve database configuration");
+            }
+
+            const data = await response.json();
+
+            const databases = Array.isArray(data) ? data : data.databases;
+
+            const database = databases.find(
+                (entry: { _id: string; name: string }) =>
+                    entry.name === activeDatabase.name
+            );
+
+            if (!database) {
+                throw new Error("Database configuration not found");
+            }
+
+            const params = new URLSearchParams({
+                format: "json",
+                databaseId: String(database._id)
+            });
+
+            selected.forEach((id) => {
+                params.append("conversationId", id);
+            });
+
+            window.location.href = `/api/workflow/export?${params.toString()}`;
+        } catch (error) {
+            setError(String(error));
+        }
     };
     const sidebarItems = visible.map((item) => ({ ...item, stime: { text: item.firstInteraction, timestamp: 0 }, last_interact: { text: item.lastInteraction, timestamp: 0 }, annotationProgress: { status: item.completion === "completed" ? "completed" as const : item.completion === "in_progress" ? "in-progress" as const : "not-started" as const } }));
     return <div className="flex h-full min-h-[75vh] bg-background text-foreground">
@@ -56,7 +84,7 @@ export default function ExportPage() {
                 disabled={!selected.length}
                 onClick={download}
             >
-                Export (JSON)
+                Export Selected Conversations (JSON)
             </button>
         </main>
     </div>;

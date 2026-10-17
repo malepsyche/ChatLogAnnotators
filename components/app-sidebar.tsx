@@ -72,6 +72,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           },
           { title: "Analytics", url: "/annotator/analytics", icon: PieChart },
           { title: "Notifications", url: "/annotator/notifications", icon: Bell },
+          { title: "Export", url: "/annotator/export", icon: Download },
         ]);
       }
     }

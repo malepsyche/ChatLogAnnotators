@@ -8,18 +8,22 @@ import {
 
 export async function getRequestUser() {
   const username = (await cookies()).get("username")?.value;
+
   if (!username) {
     console.warn("[getRequestUser] Missing username cookie");
     return null;
   }
+
   const user = await (await getUserCollection()).findOne({
     username: decodeURIComponent(username),
     isDeleted: { $ne: true },
   });
+
   if (!user) {
     console.warn("[getRequestUser] User not found:", username);
     return null;
   }
+
   return user;
 }
 
@@ -27,59 +31,126 @@ export async function getAnnotationLockStatus(
   conversationId: string,
   databaseId: string,
   username: string,
-  assignmentTitle?: string
+  assignmentId: string
 ) {
-  if (!ObjectId.isValid(conversationId)) throw new Error("Invalid conversation ID");
-  const conversation = await (await getCollection()).findOne({
+  if (!ObjectId.isValid(conversationId)) {
+    throw new Error("Invalid conversation ID");
+  }
+
+  if (!ObjectId.isValid(assignmentId)) {
+    throw new Error("Invalid assignment ID");
+  }
+
+  const assignmentCollection = await getAssignmentCollection();
+
+  const assignment = await assignmentCollection.findOne({
+    _id: new ObjectId(assignmentId),
+    databaseId,
+    annotators: username,
+    conversations: conversationId,
+  });
+
+  if (!assignment) {
+    return {
+      conversationLocked: false,
+      assignmentLocked: false,
+      isLocked: true,
+      accessDenied: true,
+    };
+  }
+
+  const collection = await getCollection();
+
+  const conversation = await collection.findOne({
     _id: new ObjectId(conversationId),
   });
-  if (!conversation) throw new Error("Conversation not found");
+
+  if (!conversation) {
+    return {
+      conversationLocked: false,
+      assignmentLocked: false,
+      isLocked: true,
+      accessDenied: true,
+    };
+  }
 
   const conversationLocked = conversation.lock?.isLocked === true;
-
-  // Only the specific assignment being worked on should control its annotator.
-  // An assignment title is optional for older routes; if omitted, any locked
-  // assignment matching this annotator/conversation applies.
-  const query: Record<string, unknown> = {
-    databaseId,
-    conversations: conversationId,
-    annotators: username,
-    "lock.isLocked": true,
-  };
-  if (assignmentTitle) query.title = assignmentTitle;
-
-  const assignment = await (await getAssignmentCollection()).findOne(query);
-  const assignmentLocked = Boolean(assignment);
+  const assignmentLocked = assignment.lock?.isLocked === true;
 
   return {
     conversationLocked,
     assignmentLocked,
     isLocked: conversationLocked || assignmentLocked,
+    accessDenied: false,
   };
 }
 
-export async function getWriteAccess(conversationId: string) {
+export async function getWriteAccess(
+  conversationId: string,
+  assignmentId?: string
+) {
   const user = await getRequestUser();
-  if (!user) return { user: null, allowed: false, reason: "Authentication required" };
 
-  if (user.role === "admin") {
-    return { user, allowed: true, reason: "" };
+  if (!user) {
+    return {
+      user: null,
+      allowed: false,
+      reason: "Authentication required",
+    };
   }
 
-  if (user.role !== "annotator" || !user.activeDatabaseId) {
-    return { user, allowed: false, reason: "Annotator access required" };
+  if (user.role === "admin") {
+    return {
+      user,
+      allowed: true,
+      reason: "",
+    };
+  }
+
+  if (user.role !== "annotator") {
+    return {
+      user,
+      allowed: false,
+      reason: "Access denied",
+    };
+  }
+
+  if (!assignmentId || !ObjectId.isValid(assignmentId)) {
+    return {
+      user,
+      allowed: false,
+      reason: "Valid assignment ID required",
+    };
+  }
+
+  const assignment = await (await getAssignmentCollection()).findOne({
+    _id: new ObjectId(assignmentId),
+    annotators: user.username,
+    conversations: conversationId,
+  });
+
+  if (!assignment) {
+    return {
+      user,
+      allowed: false,
+      reason: "Conversation is not assigned to this annotator",
+    };
   }
 
   const status = await getAnnotationLockStatus(
     conversationId,
-    user.activeDatabaseId,
+    assignment.databaseId,
     user.username,
-    user.activeAssignment
+    assignmentId
   );
 
   return {
     user,
-    allowed: !status.isLocked,
-    reason: status.isLocked ? "Annotations are locked" : "",
+    allowed: !status.isLocked && !status.accessDenied,
+    reason: status.accessDenied
+      ? "Conversation is not assigned to this annotator"
+      : status.isLocked
+      ? "Annotations are locked"
+      : "",
   };
 }

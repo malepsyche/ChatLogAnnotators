@@ -1,90 +1,95 @@
 "use client";
 
 import { ReactNode, useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import ConversationSidebar from "@/components/conversation-sidebar";
 import { Conversation } from "@/types/conversations";
 import { useAssignment } from "@/components/context/assignment-context";
 
 export default function HomeLayout({ children }: { children: ReactNode }) {
-  const [conversations, setConversations] = useState<Conversation[]>([]); // eslint-disable-line @typescript-eslint/no-unused-vars
   const [filteredConversations, setFilteredConversations] = useState<
     Conversation[]
   >([]);
   const [tempQuery, setTempQuery] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedConversation, setSelectedConversation] = useState<
-    string | null
-  >(null);
+
   const router = useRouter();
+  const pathname = usePathname();
   const { activeAssignment } = useAssignment();
 
-  useEffect(() => {
-    const username = document.cookie
-      .split("; ")
-      .find((row) => row.startsWith("username="))
-      ?.split("=")[1];
+  const selectedConversation = pathname.match(
+    /^\/annotator\/home\/([^/]+)/
+  )?.[1] || null;
 
-    if (!activeAssignment || !username) return;
+  useEffect(() => {
+    if (!activeAssignment) {
+      setFilteredConversations([]);
+      return;
+    }
+
+    let cancelled = false;
 
     const fetchConversations = async () => {
       try {
         const queryParam = searchQuery
           ? `&query=${encodeURIComponent(searchQuery)}`
           : "";
-        console.log(
-          "[HomeLayout] Fetching conversations for assignment:",
-          activeAssignment
-        );
 
         const response = await fetch(
-          `/api/conversations/annotators?username=${username}&assignmentTitle=${encodeURIComponent(
+          `/api/conversations/annotators?assignmentId=${encodeURIComponent(
             activeAssignment
           )}${queryParam}`
         );
 
+        if (!response.ok) {
+          throw new Error("Failed to fetch conversations");
+        }
+
         const data = await response.json();
 
-        if (Array.isArray(data)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const transformedData = data.map((chatlog: any) => ({
-            _id: chatlog._id || "unknown_id",
-            title: chatlog.title || "Untitled",
-            stime: chatlog.firstInteraction
-              ? {
-                  text: new Date(chatlog.firstInteraction).toLocaleString(),
-                  timestamp: new Date(chatlog.firstInteraction).getTime(),
-                }
-              : { text: "Unknown Start Time", timestamp: 0 },
-
-            last_interact: chatlog.lastInteraction
-              ? {
-                  text: new Date(chatlog.lastInteraction).toLocaleString(),
-                  timestamp: new Date(chatlog.lastInteraction).getTime(),
-                }
-              : { text: "Unknown Last Interaction", timestamp: 0 },
-
-            person: chatlog.Person || "Unknown Person",
-            messages: chatlog.messages || [],
-            annotations: chatlog.annotations || [],
-          }));
-
-          setConversations(transformedData);
-          setFilteredConversations(transformedData);
-        } else {
-          console.error("[HomeLayout] Expected an array but got:", data);
-          setConversations([]);
-          setFilteredConversations([]);
+        if (!Array.isArray(data)) {
+          throw new Error("Expected an array of conversations");
         }
+
+        if (cancelled) return;
+
+        const transformedData = data.map((chatlog) => ({
+          _id: chatlog._id || "unknown_id",
+          title: chatlog.title || "Untitled",
+          stime: {
+            text: chatlog.firstInteraction || "Unknown Start Time",
+            timestamp: Date.parse(chatlog.firstInteraction) || 0,
+          },
+          last_interact: {
+            text: chatlog.lastInteraction || "Unknown Last Interaction",
+            timestamp: Date.parse(chatlog.lastInteraction) || 0,
+          },
+          person: chatlog.person || "Unknown Person",
+          messages: chatlog.messages || [],
+          annotations: chatlog.annotations || [],
+          lock: chatlog.lock,
+          effectiveLock: chatlog.effectiveLock,
+        }));
+
+        setFilteredConversations(transformedData);
       } catch (error) {
+        if (cancelled) return;
+
         console.error("[HomeLayout] Error fetching conversations:", error);
-        setConversations([]);
         setFilteredConversations([]);
       }
     };
 
-    fetchConversations();
+    void fetchConversations();
+
+    return () => {
+      cancelled = true;
+    };
   }, [searchQuery, activeAssignment]);
+
+  useEffect(() => {
+    router.push("/annotator/home");
+  }, [activeAssignment, router]);
 
   return (
     <div className="flex-row flex text-foreground bg-background">
@@ -99,15 +104,16 @@ export default function HomeLayout({ children }: { children: ReactNode }) {
             className="w-full p-2 rounded-md bg-input text-foreground border border-border focus:outline-none focus:ring focus:ring-ring"
           />
         </div>
+
         <ConversationSidebar
           conversations={filteredConversations}
           onConversationSelect={(id) => {
-            setSelectedConversation(id);
             router.push(`/annotator/home/${id}`);
           }}
           selectedConversation={selectedConversation}
         />
       </div>
+
       <div className="flex-1 overflow-auto bg-background text-foreground">
         {!selectedConversation ? (
           <div className="p-4 text-center text-muted">

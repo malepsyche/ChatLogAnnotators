@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getUserCollection } from "@/lib/cosmosdb";
+import { getUserCollection, getAssignmentCollection } from "@/lib/cosmosdb";
+import { getRequestUser } from "@/lib/annotationLock";
 
 export async function GET(req: Request) {
   try {
@@ -10,8 +11,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing username" }, { status: 400 });
     }
 
+    const requestUser = await getRequestUser();
+
+    if (!requestUser || requestUser.username !== username) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    }
+
     const userCollection = await getUserCollection();
-    const user = await userCollection.findOne({ username });
+    const user = await userCollection.findOne({
+      username,
+      isDeleted: { $ne: true },
+    });
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -21,18 +31,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    const assignmentsList: { assignmentTitle: string; databaseId: string }[] = [];
+    const assignmentCollection = await getAssignmentCollection();
 
-    for (const [databaseId, data] of Object.entries(user.assignedConversations || {}) as [string, { assignments?: { assignmentTitle: string }[] }][]) {
-      if (data.assignments) {
-        for (const assignment of data.assignments) {
-          assignmentsList.push({
-            assignmentTitle: assignment.assignmentTitle,
-            databaseId: databaseId,
-          });
-        }
-      }
-    }
+    const assignments = await assignmentCollection
+      .find({ annotators: username })
+      .sort({ title: 1 })
+      .toArray();
+
+    const assignmentsList = assignments.map((assignment) => ({
+      assignmentId: assignment._id.toString(),
+      assignmentTitle: assignment.title,
+      databaseId: assignment.databaseId,
+      conversationCount: assignment.conversations?.length || 0,
+      isLocked: assignment.lock?.isLocked === true,
+    }));
 
     return NextResponse.json(assignmentsList);
   } catch (error) {

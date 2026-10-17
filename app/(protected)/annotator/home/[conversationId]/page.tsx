@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Conversation, Annotation, Answer } from "@/types/conversations";
 import { toast } from "react-toastify";
+import { useAssignment } from "@/components/context/assignment-context";
 
 type ConversationWithLock = Conversation & {
   lock?: {
@@ -89,6 +90,8 @@ export default function ConversationPage({
     null
   );
 
+  const { activeAssignment } = useAssignment();
+
   const [localCommentContent, setLocalCommentContent] = useState<
     Record<number, string>
   >({});
@@ -98,8 +101,14 @@ export default function ConversationPage({
   >({});
 
   const refreshConversation = useCallback(async (id: string) => {
+    if (!activeAssignment) {
+      throw new Error("No active assignment selected");
+    }
+
     const response = await fetch(
-      `/api/conversations/${encodeURIComponent(id)}`,
+      `/api/conversations/${encodeURIComponent(
+        id
+      )}?assignmentId=${encodeURIComponent(activeAssignment)}`,
       {
         cache: "no-store",
       }
@@ -118,9 +127,13 @@ export default function ConversationPage({
     setConversation(data);
 
     return data;
-  }, []);
+  }, [activeAssignment]);
 
   useEffect(() => {
+    if (!activeAssignment) {
+      return;
+    }
+
     let cancelled = false;
 
     params
@@ -228,6 +241,7 @@ export default function ConversationPage({
         },
         body: JSON.stringify({
           id: conversationId,
+          assignmentId: activeAssignment,
           annotationId,
           updatedAnswer: content,
           name: getUsername(),
@@ -281,6 +295,7 @@ export default function ConversationPage({
           },
           body: JSON.stringify({
             id: conversationId,
+            assignmentId: activeAssignment,
             comment: {
               name: getUsername(),
               timestamp: Date.now(),
@@ -343,6 +358,7 @@ export default function ConversationPage({
           },
           body: JSON.stringify({
             id: conversationId,
+            assignmentId: activeAssignment,
             commentId,
           }),
         }

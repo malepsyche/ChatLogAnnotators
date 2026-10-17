@@ -1,6 +1,5 @@
 "use client";
 
-import "../../globals.css";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -15,8 +14,8 @@ import { ReactNode } from "react";
 const RootLayout = ({ children }: { children: ReactNode }) => {
   return (
     <AssignmentProvider>
-      <html lang="en" suppressHydrationWarning>
-        <body className="bg-primary text-foreground h-screen overflow-hidden">
+      <div className="h-screen overflow-hidden bg-primary text-foreground">
+        
           <ThemeProvider
             attribute="class"
             defaultTheme="system"
@@ -40,8 +39,8 @@ const RootLayout = ({ children }: { children: ReactNode }) => {
               </div>
             </SidebarProvider>
           </ThemeProvider>
-        </body>
-      </html>
+        
+      </div>
     </AssignmentProvider>
   );
 };

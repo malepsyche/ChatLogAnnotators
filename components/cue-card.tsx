@@ -31,8 +31,9 @@ const CueCard: React.FC<CueCardProps> = ({
   >
     <p className="font-bold text-lg break-words text-center">{title}</p>
     <p className="font-medium text-sm break-words mt-2">{person}</p>
-    <p className="text-xs break-words mt-1"><strong>First Interaction:</strong> {new Date(firstInteraction).toLocaleString()}</p>
-    <p className="text-xs break-words mt-1"><strong>Last Interaction:</strong> {new Date(lastInteraction).toLocaleString()}</p>
+    <p className="text-xs break-words mt-1"><strong>First Interaction:</strong> {firstInteraction || "Unknown"}</p>
+    <p className="text-xs break-words mt-1"><strong>Last Interaction:</strong> {lastInteraction || "Unknown"}</p>
+    {!isInProgress && !isAnnotatedByUser && (<p className="w-fit rounded-full px-2 py-1 text-xs bg-muted text-muted-foreground mt-2">Not Started</p>)}
     {isInProgress && (
       <p className="w-fit rounded-[20px] px-2 py-2 justify-items-center text-right text-sm text-primary-50 bg-yellow-600 text-white">In Progress</p>
     )}

@@ -1,128 +1,45 @@
 "use client";
 
-import { ReactNode, useState, useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { ReactNode, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import ConversationSidebar from "@/components/conversation-sidebar";
-import { Conversation } from "@/types/conversations";
+import ConversationFilters, { emptyFilters, Filters } from "@/components/conversation-filters";
+import { completion } from "@/lib/conversation-filter-status";
 import { useAssignment } from "@/components/context/assignment-context";
+import type { Conversation } from "@/types/conversations";
 
 export default function HomeLayout({ children }: { children: ReactNode }) {
-  const [filteredConversations, setFilteredConversations] = useState<
-    Conversation[]
-  >([]);
-  const [tempQuery, setTempQuery] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const router = useRouter();
-  const pathname = usePathname();
-  const { activeAssignment } = useAssignment();
-
-  const selectedConversation = pathname.match(
-    /^\/annotator\/home\/([^/]+)/
-  )?.[1] || null;
-
-  useEffect(() => {
-    if (!activeAssignment) {
-      setFilteredConversations([]);
-      return;
-    }
-
-    let cancelled = false;
-
-    const fetchConversations = async () => {
-      try {
-        const queryParam = searchQuery
-          ? `&query=${encodeURIComponent(searchQuery)}`
-          : "";
-
-        const response = await fetch(
-          `/api/conversations/annotators?assignmentId=${encodeURIComponent(
-            activeAssignment
-          )}${queryParam}`
-        );
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch conversations");
-        }
-
-        const data = await response.json();
-
-        if (!Array.isArray(data)) {
-          throw new Error("Expected an array of conversations");
-        }
-
-        if (cancelled) return;
-
-        const transformedData = data.map((chatlog) => ({
-          _id: chatlog._id || "unknown_id",
-          title: chatlog.title || "Untitled",
-          stime: {
-            text: chatlog.firstInteraction || "Unknown Start Time",
-            timestamp: Date.parse(chatlog.firstInteraction) || 0,
-          },
-          last_interact: {
-            text: chatlog.lastInteraction || "Unknown Last Interaction",
-            timestamp: Date.parse(chatlog.lastInteraction) || 0,
-          },
-          person: chatlog.person || "Unknown Person",
-          messages: chatlog.messages || [],
-          annotations: chatlog.annotations || [],
-          lock: chatlog.lock,
-          effectiveLock: chatlog.effectiveLock,
-        }));
-
-        setFilteredConversations(transformedData);
-      } catch (error) {
-        if (cancelled) return;
-
-        console.error("[HomeLayout] Error fetching conversations:", error);
-        setFilteredConversations([]);
-      }
-    };
-
-    void fetchConversations();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [searchQuery, activeAssignment]);
-
-  useEffect(() => {
-    router.push("/annotator/home");
-  }, [activeAssignment, router]);
-
-  return (
-    <div className="flex-row flex text-foreground bg-background">
-      <div className="w-80 bg-background text-sidebar-foreground h-full border-r border-sidebar-border">
-        <div className="p-4 border-b border-sidebar-border">
-          <input
-            type="text"
-            placeholder="Search conversations..."
-            value={tempQuery}
-            onChange={(e) => setTempQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && setSearchQuery(tempQuery)}
-            className="w-full p-2 rounded-md bg-input text-foreground border border-border focus:outline-none focus:ring focus:ring-ring"
-          />
+    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [filters, setFilters] = useState<Filters>({ ...emptyFilters });
+    const [search, setSearch] = useState("");
+    const [error, setError] = useState("");
+    const router = useRouter();
+    const pathname = usePathname();
+    const { activeAssignment } = useAssignment();
+    const selectedConversation = pathname.match(/^\/annotator\/home\/([^/]+)/)?.[1] || null;
+    const username = typeof document !== "undefined" ? decodeURIComponent(document.cookie.split("; ").find((part) => part.startsWith("username="))?.split("=")[1] || "") : "";
+    useEffect(() => {
+        setFilters({ ...emptyFilters });
+        if (!activeAssignment) { setConversations([]); return; }
+        const controller = new AbortController();
+        fetch(`/api/conversations/annotators?assignmentId=${encodeURIComponent(activeAssignment)}`, { cache: "no-store", signal: controller.signal })
+            .then(async (response) => { if (!response.ok) throw new Error("Could not load conversations"); return response.json(); })
+            .then((data) => { setConversations(data); setError(""); })
+            .catch((err) => { if (!controller.signal.aborted) { setConversations([]); setError(err.message); } });
+        router.push("/annotator/home");
+        return () => controller.abort();
+    }, [activeAssignment, router]);
+    const filtered = useMemo(() => conversations.filter((item) => {
+        if (search && !`${item.title} ${item.person || item.Person || ""}`.toLowerCase().includes(search.toLowerCase())) return false;
+        return filters.completion === "all" || completion(item, username) === filters.completion;
+    }), [conversations, filters.completion, search, username]);
+    return <div className="flex flex-row bg-background text-foreground">
+        <div className="w-80 shrink-0 border-r border-sidebar-border">
+            <div className="p-4 border-b border-sidebar-border"><input className="w-full p-2 rounded-md bg-input text-foreground border border-border" placeholder="Search conversations..." value={search} onChange={(event) => setSearch(event.target.value)} /></div>
+            <ConversationFilters mode="annotator" value={filters} onChange={setFilters} />
+            {error && <p role="alert" className="p-3 text-sm text-red-600">{error}</p>}
+            <ConversationSidebar conversations={filtered.map((item) => ({ ...item, stime: { text: (item as Conversation & { firstInteraction?: string }).firstInteraction || "", timestamp: 0 }, last_interact: { text: (item as Conversation & { lastInteraction?: string }).lastInteraction || "", timestamp: 0 } }))} selectedConversation={selectedConversation} onConversationSelect={(id) => router.push(`/annotator/home/${id}`)} />
         </div>
-
-        <ConversationSidebar
-          conversations={filteredConversations}
-          onConversationSelect={(id) => {
-            router.push(`/annotator/home/${id}`);
-          }}
-          selectedConversation={selectedConversation}
-        />
-      </div>
-
-      <div className="flex-1 overflow-auto bg-background text-foreground">
-        {!selectedConversation ? (
-          <div className="p-4 text-center text-muted">
-            <p className="text-lg">Select a conversation to view details</p>
-          </div>
-        ) : (
-          children
-        )}
-      </div>
-    </div>
-  );
+        <div className="flex-1 overflow-auto bg-background text-foreground">{selectedConversation ? children : <p className="p-4 text-center">Select a conversation to view details</p>}</div>
+    </div>;
 }

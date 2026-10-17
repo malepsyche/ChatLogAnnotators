@@ -3,11 +3,15 @@
 import * as React from "react";
 import {
   SquareTerminal,
-  Settings2,
   PieChart,
   LucideIcon,
   Users,
   List,
+  ClipboardList,
+  Bell,
+  Download,
+  History,
+  Settings2,
 } from "lucide-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -50,9 +54,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             icon: SquareTerminal,
             isActive: true,
           },
-          { title: "Teams", url: "/admin/teams", icon: Users },
-          { title: "Admin", url: "/admin/admin", icon: Settings2 },
+          { title: "Assignments", url: "/admin/assignments", icon: ClipboardList },
+          { title: "Workflow", url: "/admin/admin", icon: Settings2 },
           { title: "Analytics", url: "/admin/analytics", icon: PieChart },
+          { title: "Notifications", url: "/admin/notifications", icon: Bell },
+          { title: "Audit History", url: "/admin/audit", icon: History },
+          { title: "Teams", url: "/admin/teams", icon: Users },
+          { title: "Export", url: "/admin/export", icon: Download },
         ]);
       } else if (role === "annotator") {
         setNavMain([
@@ -63,6 +71,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             isActive: true,
           },
           { title: "Analytics", url: "/annotator/analytics", icon: PieChart },
+          { title: "Notifications", url: "/annotator/notifications", icon: Bell },
         ]);
       }
     }

@@ -1,6 +1,5 @@
 "use client";
 
-import "../../globals.css";
 import { ReactNode } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -14,8 +13,8 @@ import DatabaseSwitcher from "@/components/context/database-switcher";
 const RootLayout = ({ children }: { children: ReactNode }) => {
   return (
     <DatabaseProvider>
-      <html lang="en" suppressHydrationWarning>
-        <body className="bg-primary text-foreground h-screen overflow-hidden">
+      <div className="h-screen overflow-hidden bg-primary text-foreground">
+        
           <ThemeProvider
             attribute="class"
             defaultTheme="system"
@@ -40,8 +39,8 @@ const RootLayout = ({ children }: { children: ReactNode }) => {
               </div>
             </SidebarProvider>
           </ThemeProvider>
-        </body>
-      </html>
+        
+      </div>
     </DatabaseProvider>
   );
 };

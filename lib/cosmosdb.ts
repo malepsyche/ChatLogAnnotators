@@ -1,4 +1,5 @@
 import { MongoClient } from "mongodb";
+import { auditedCollection } from "@/lib/audited-collection";
 import { getActiveDatabase } from "@/lib/databaseManager";
 import dotenv from "dotenv";
 
@@ -60,33 +61,29 @@ export const getCollection = async () => {
 
     const mongoClient = await getMongoClient(activeDatabase.uri);
 
-    return mongoClient
-        .db(activeDatabase.databaseId)
-        .collection(activeDatabase.containerId);
+    return auditedCollection(mongoClient.db(activeDatabase.databaseId).collection(activeDatabase.containerId), getSystemDatabase);
 };
 
 export const getUserCollection = async () => {
     const mongoClient = await getMongoClient(defaultConfig.uri);
 
-    return mongoClient
-        .db(defaultConfig.databaseId)
-        .collection(defaultConfig.userCollection);
+    return auditedCollection(mongoClient.db(defaultConfig.databaseId).collection(defaultConfig.userCollection), getSystemDatabase);
 };
 
 export const getDatabaseCollection = async () => {
     const mongoClient = await getMongoClient(defaultConfig.uri);
 
-    return mongoClient
-        .db(defaultConfig.databaseId)
-        .collection(
-            process.env.DEFAULT_COSMOSDB_DATABASE_COLLECTION || "databases"
-        );
+    return auditedCollection(mongoClient.db(defaultConfig.databaseId).collection(
+        process.env.DEFAULT_COSMOSDB_DATABASE_COLLECTION || "databases"
+    ), getSystemDatabase);
 };
 
 export const getAssignmentCollection = async () => {
     const mongoClient = await getMongoClient(defaultConfig.uri);
 
-    return mongoClient
-        .db(defaultConfig.databaseId)
-        .collection(defaultConfig.assignmentCollection);
+    return auditedCollection(mongoClient.db(defaultConfig.databaseId).collection(defaultConfig.assignmentCollection), getSystemDatabase);
 };
+export async function getSystemDatabase() {
+    const client = await getMongoClient(defaultConfig.uri);
+    return client.db(defaultConfig.databaseId);
+}

@@ -1,7 +1,2 @@
-import React from "react";
-
-const AnalyticsPage = () => {
-  return <div>This page is not dedicated for Annotators</div>;
-};
-
-export default AnalyticsPage;
+import WorkflowDashboard from "@/components/workflow-dashboard";
+export default function Page() { return <WorkflowDashboard role="annotator" />; }

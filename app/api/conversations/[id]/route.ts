@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import {
@@ -10,6 +11,7 @@ import {
   getRequestUser,
   getWriteAccess,
 } from "@/lib/annotationLock";
+import { recordEvent } from "@/lib/workflow";
 
 type Context = { params: Promise<{ id: string }> };
 type RecordValue = Record<string, unknown>;
@@ -318,6 +320,25 @@ export async function PATCH(req: Request, context: Context) {
       ? annotation.answers
       : [];
 
+    const questionTitle = String(
+        annotation.title || `Question ${index + 1}`
+    );
+    const previousAnswer = answers.find(
+        (answer: RecordValue) =>
+            answer &&
+            typeof answer === "object" &&
+            answer.name === user.username
+    );
+    const previousContent = Array.isArray(previousAnswer?.content)
+        ? previousAnswer.content.map(String)
+        : [];
+    const previousResolution = annotation.adminResolution as
+        | { content?: string[] }
+        | undefined;
+    const previousResolutionContent = Array.isArray(previousResolution?.content)
+        ? previousResolution.content
+        : [];
+
     const filter: RecordValue = {
       _id: new ObjectId(id),
       [`annotations.${index}._id`]: new ObjectId(annotationId),
@@ -369,17 +390,74 @@ export async function PATCH(req: Request, context: Context) {
     }
 
     if (!result.matchedCount) {
-      return NextResponse.json(
-        { error: "Conversation locked or annotation changed; refresh and retry" },
-        { status: 409 }
-      );
+        return NextResponse.json(
+            {
+                error: "Conversation locked or annotation changed; refresh and retry"
+            },
+            { status: 409 }
+        );
+    }
+
+    if (result.modifiedCount > 0) {
+        const isResolution = action === "resolve";
+
+        const oldContent = isResolution
+            ? previousResolutionContent
+            : previousContent;
+
+        const eventAction = isResolution
+            ? "annotation.resolved"
+            : previousAnswer
+                ? "annotation.answer_changed"
+                : "annotation.answer_submitted";
+
+        const assignments = await (
+            await getAssignmentCollection()
+        ).find({
+            conversations: id
+        }).toArray();
+
+        const recipients: string[] = [
+            ...new Set(
+                assignments.flatMap((assignment) =>
+                    Array.isArray(assignment.annotators)
+                        ? assignment.annotators
+                        : []
+                )
+            )
+        ];
+
+        const details = {
+            conversationId: id,
+            conversationTitle: String(
+                conversation.title || conversation.person || "Untitled conversation"
+            ),
+            annotationId,
+            annotationTitle: questionTitle,
+            questionIndex: index,
+            previousAnswer: oldContent,
+            updatedAnswer: content,
+            assignmentId: assignmentId || null
+        };
+
+        try {
+            await recordEvent(
+                user.username,
+                eventAction,
+                id,
+                details,
+                recipients
+            );
+        } catch (error) {
+            console.error("Failed to record annotation activity:", error);
+        }
     }
 
     return NextResponse.json({
-      message:
-        action === "resolve"
-          ? "Annotation resolved successfully"
-          : "Annotation updated successfully",
+        message:
+            action === "resolve"
+                ? "Annotation resolved successfully"
+                : "Annotation updated successfully"
     });
   } catch (error) {
     console.error("Error updating annotation:", error);

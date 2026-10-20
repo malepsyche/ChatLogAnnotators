@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAssignmentCollection, getCollection, getDatabaseCollection } from "@/lib/cosmosdb";
 import { getRequestUser } from "@/lib/annotationLock";
 import { aggregateCompletion, completion, consensus, needsReview, isAdminResolved } from "@/lib/conversation-filter-status";
+import { assess } from "@/lib/workflow";
 
 export async function GET(req: Request) {
     try {
@@ -27,7 +28,9 @@ export async function GET(req: Request) {
                 firstInteraction: doc.stime?.text || "", lastInteraction: doc.last_interact?.text || "",
                 assignmentId: assignment?._id.toString() || null, annotators,
                 completion: status, consensus: agreement, needsReview: needsReview(doc, annotators),
-                adminResolved: isAdminResolved(doc), locked: doc.lock?.isLocked === true || assignment?.lock?.isLocked === true,
+                adminResolved: assignment
+                    ? assess(doc, annotators).resolution === "admin_resolved"
+                    : false,
                 perAnnotatorCompletion: Object.fromEntries(annotators.map((name) => [name, completion(doc, name)])),
             };
         });

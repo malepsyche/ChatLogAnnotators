@@ -75,7 +75,7 @@ export default function ExportPage() {
             <ConversationSidebar conversations={sidebarItems} statusMode="all-annotators" selectedConversation={null} onConversationSelect={toggle} />
         </div>
         <main className="flex-1 space-y-5 p-6">
-            <h1 className="text-2xl font-semibold">Export Annotations</h1>
+            <h1 className="text-2xl font-semibold">Export Conversations</h1>
             {error && <p role="alert" className="text-red-500">{error}</p>}
             <p>{selected.length} conversation{selected.length === 1 ? "" : "s"} selected</p>
             <div className="flex flex-wrap gap-2">{selected.map((id) => { const item = items.find((entry) => String(entry._id) === id); return <button key={id} onClick={() => toggle(id)} className="rounded-md border px-3 py-2 text-sm">{item?.title || id} ×</button>; })}</div>
